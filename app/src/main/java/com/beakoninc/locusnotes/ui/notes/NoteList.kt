@@ -1,5 +1,6 @@
 package com.beakoninc.locusnotes.ui.notes
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,7 @@ import com.beakoninc.locusnotes.data.model.Note
 fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
     val notes by viewModel.notesFlow.collectAsState()
     var showAddNoteDialog by remember { mutableStateOf(false) }
+    var selectedNote by remember { mutableStateOf<Note?>(null) }
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -34,7 +36,9 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
                 } else {
                     LazyColumn {
                         items(notes) { note ->
-                            NoteItem(note)
+                            NoteListItem(note){
+                                selectedNote = note
+                            }
                         }
                     }
                 }
@@ -60,6 +64,41 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
             }
         )
     }
+    selectedNote?.let { note ->
+        NoteDetailDialog(note = note, onDismiss = { selectedNote = null })
+    }
+}
+
+@Composable
+fun NoteListItem(note: Note, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Text(
+            text = note.title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@Composable
+fun NoteDetailDialog(note: Note, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(note.title) },
+        text = {
+            Text(note.content)
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 @Composable
@@ -81,6 +120,7 @@ fun NoteItem(note: Note) {
 fun AddNoteDialog(onDismiss: () -> Unit, onNoteAdded: (String, String) -> Unit) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
+    var pointCount by remember { mutableStateOf(0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -96,12 +136,20 @@ fun AddNoteDialog(onDismiss: () -> Unit, onNoteAdded: (String, String) -> Unit) 
                 TextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("Content") }
+                    label = { Text("Content") },
+                    modifier = Modifier.height(150.dp)
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { onNoteAdded(title, content) }) {
+            Button(onClick = {
+                if (title.isNotEmpty() && content.isNotEmpty()){
+                    onNoteAdded(title, content)
+                }
+                else{
+                    onDismiss()
+                }
+            }) {
                 Text("Add")
             }
         },
