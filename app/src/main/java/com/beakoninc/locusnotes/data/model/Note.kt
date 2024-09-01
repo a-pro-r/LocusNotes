@@ -1,12 +1,14 @@
 package com.beakoninc.locusnotes.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import java.util.UUID
 
-// Represents a single note in the application
+@Entity(tableName = "notes")
 data class Note(
-    val id: String = UUID.randomUUID().toString(), // Unique identifier for the note
-    val title: String, // Title of the note
-    val content: String, // Content of the note
-    val createdAt: Long = System.currentTimeMillis(), // Timestamp of when the note was created
-    val updatedAt: Long = createdAt // Timestamp of when the note was last updated
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val content: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = createdAt
 )

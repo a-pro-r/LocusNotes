@@ -1,7 +1,7 @@
 package com.beakoninc.locusnotes.ui.notes
 
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.beakoninc.locusnotes.BaseViewModel
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,25 +13,28 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+
 @HiltViewModel
 class NoteViewModel @Inject constructor(
     private val noteRepository: NoteRepository
-) : BaseViewModel<NoteViewModel.State>(State()) {
-
-    data class State(
-        val notes: List<Note> = emptyList(),
-        val isLoading: Boolean = false,
-        val error: String? = null
-    )
+) : ViewModel() {
 
     val notesFlow: StateFlow<List<Note>> = noteRepository.getAllNotesFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _selectedNote = MutableStateFlow<Note?>(null)
     val selectedNote: StateFlow<Note?> = _selectedNote.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     fun selectNote(note: Note) {
         _selectedNote.value = note
     }
+
     fun getNote(id: String): Note? {
         return notesFlow.value.find { it.id == id }
     }
@@ -46,6 +49,9 @@ class NoteViewModel @Inject constructor(
     fun updateNote(note: Note) {
         viewModelScope.launch {
             noteRepository.updateNote(note)
+            if (_selectedNote.value?.id == note.id) {
+                _selectedNote.value = note
+            }
         }
     }
 
@@ -56,17 +62,22 @@ class NoteViewModel @Inject constructor(
     fun deleteNote(note: Note) {
         viewModelScope.launch {
             noteRepository.deleteNote(note)
+            if (_selectedNote.value?.id == note.id) {
+                clearSelectedNote()
+            }
         }
     }
 
     fun searchNotes(query: String) {
         viewModelScope.launch {
-            setState { copy(isLoading = true, error = null) }
+            _isLoading.value = true
+            _error.value = null
             try {
                 val searchResults = noteRepository.searchNotes(query)
-                setState { copy(notes = searchResults, isLoading = false) }
+                _isLoading.value = false
             } catch (e: Exception) {
-                setState { copy(error = e.message, isLoading = false) }
+                _error.value = e.message
+                _isLoading.value = false
             }
         }
     }
