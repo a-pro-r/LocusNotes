@@ -17,14 +17,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.beakoninc.locusnotes.data.model.Note
+import com.beakoninc.locusnotes.ui.components.SearchBar
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
     val notes by viewModel.notesFlow.collectAsState()
@@ -32,15 +40,26 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
 
+    val searchResults by viewModel.searchResults.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.searchNotes(it) },
+                onSearchClear = { viewModel.clearSearch() }
+            )
+
             Text(
                 "Your Notes",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(16.dp)
             )
 
-            if (notes.isEmpty()) {
+            if (searchQuery.isNotEmpty()) {
+                NoteSearchResults(searchResults, searchQuery, onNoteClick = { selectedNoteId = it.id })
+            } else if (notes.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No notes yet. Add your first note!")
                 }
@@ -49,7 +68,7 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
                     items(notes) { note ->
                         NoteListItem(
                             note = note,
-                            onShowDetails = { selectedNoteId = it.id  },
+                            onShowDetails = { selectedNoteId = it.id },
                             onEdit = {
                                 selectedNoteId = note.id
                                 showEditDialog = true
@@ -111,6 +130,66 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
                     }
                 )
             }
+        }
+    }
+}
+@Composable
+fun NoteSearchResults(
+    searchResults: List<Note>,
+    searchQuery: String,
+    onNoteClick: (Note) -> Unit
+) {
+    LazyColumn {
+        items(searchResults) { note ->
+            NoteItemWithHighlight(note, searchQuery, onNoteClick)
+        }
+    }
+}
+@Composable
+fun NoteItemWithHighlight(
+    note: Note,
+    searchQuery: String,
+    onClick: (Note) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .clickable { onClick(note) }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = highlightText(note.title, searchQuery),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = highlightText(note.content, searchQuery),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun highlightText(text: String, query: String): AnnotatedString {
+    return buildAnnotatedString {
+        val lowercaseText = text.lowercase()
+        val lowercaseQuery = query.lowercase()
+        var startIndex = 0
+        while (true) {
+            val index = lowercaseText.indexOf(lowercaseQuery, startIndex)
+            if (index == -1) {
+                append(text.substring(startIndex))
+                break
+            }
+            append(text.substring(startIndex, index))
+            withStyle(style = SpanStyle(background = Color.Yellow)) {
+                append(text.substring(index, index + query.length))
+            }
+            startIndex = index + query.length
         }
     }
 }

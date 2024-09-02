@@ -20,6 +20,6 @@ interface NoteDao {
 
     @Delete
     suspend fun deleteNote(note: Note)
-    @Query("SELECT * FROM notes WHERE title LIKE :query OR content LIKE :query")
+    @Query("SELECT * FROM notes WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(content) LIKE '%' || LOWER(:query) || '%'")
     suspend fun searchNotes(query: String): List<Note>
 }

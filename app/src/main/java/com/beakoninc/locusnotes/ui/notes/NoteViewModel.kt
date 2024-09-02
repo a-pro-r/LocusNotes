@@ -67,18 +67,30 @@ class NoteViewModel @Inject constructor(
             }
         }
     }
+    private val _searchResults = MutableStateFlow<List<Note>>(emptyList())
+    val searchResults: StateFlow<List<Note>> = _searchResults.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     fun searchNotes(query: String) {
+        _searchQuery.value = query
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                val searchResults = noteRepository.searchNotes(query)
+                val results = noteRepository.searchNotes(query)
+                _searchResults.value = results
                 _isLoading.value = false
             } catch (e: Exception) {
                 _error.value = e.message
                 _isLoading.value = false
             }
         }
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
     }
 }
