@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
+import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,12 +30,15 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.ui.components.SearchBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteList(viewModel: NoteViewModel = hiltViewModel()) {
+fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
+             navController: NavController
+) {
     val notes by viewModel.notesFlow.collectAsState()
     var selectedNoteId by remember { mutableStateOf<String?>(null) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
@@ -295,7 +299,6 @@ fun NoteItem(note: Note) {
 fun AddNoteDialog(onDismiss: () -> Unit, onNoteAdded: (String, String) -> Unit) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
-    var pointCount by remember { mutableStateOf(0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
