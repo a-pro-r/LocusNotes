@@ -39,9 +39,15 @@ class NoteViewModel @Inject constructor(
         return notesFlow.value.find { it.id == id }
     }
 
-    fun addNote(title: String, content: String) {
+
+    fun addNote(title: String, content: String, tags: List<String>) {
         viewModelScope.launch {
-            val newNote = Note(title = title, content = content)
+            val newNote = Note(
+                title = title,
+                content = content,
+                tags = tags,
+                createdAt = System.currentTimeMillis()
+            )
             noteRepository.insertNote(newNote)
         }
     }
@@ -67,6 +73,7 @@ class NoteViewModel @Inject constructor(
             }
         }
     }
+
     private val _searchResults = MutableStateFlow<List<Note>>(emptyList())
     val searchResults: StateFlow<List<Note>> = _searchResults.asStateFlow()
 
@@ -93,4 +100,5 @@ class NoteViewModel @Inject constructor(
         _searchQuery.value = ""
         _searchResults.value = emptyList()
     }
+
 }

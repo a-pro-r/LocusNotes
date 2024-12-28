@@ -10,5 +10,6 @@ data class Note(
     val title: String,
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = createdAt
+    val updatedAt: Long = createdAt,
+    val tags: List<String> = emptyList()
 )

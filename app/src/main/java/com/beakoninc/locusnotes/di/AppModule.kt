@@ -12,10 +12,20 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Add the tags column with a default value
+            database.execSQL(
+                "ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''"
+            )
+        }
+    }
 
     @Provides
     @Singleton
@@ -24,7 +34,11 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "notes_database"
-        ).build()
+        )
+            .addMigrations(MIGRATION_1_2)  // Add migration strategy
+            // Alternatively for development only:
+            // .fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides

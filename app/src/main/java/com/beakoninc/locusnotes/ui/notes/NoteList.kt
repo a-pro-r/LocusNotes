@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
-import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,11 +27,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.ui.components.SearchBar
+import com.beakoninc.locusnotes.ui.components.TagInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,8 +101,8 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     if (showAddNoteDialog) {
         AddNoteDialog(
             onDismiss = { showAddNoteDialog = false },
-            onNoteAdded = { title, content ->
-                viewModel.addNote(title, content)
+            onNoteAdded = { title, content, tags ->
+                viewModel.addNote(title, content, tags)
                 showAddNoteDialog = false
             }
         )
@@ -199,49 +198,55 @@ fun highlightText(text: String, query: String): AnnotatedString {
 }
 
 @Composable
-fun NoteListItem(note: Note,
-                 onShowDetails: (Note) -> Unit,
-                 onEdit: () -> Unit,
-                 onDelete: () -> Unit) {
-    var showDropdown by remember {mutableStateOf(false)}
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+fun NoteListItem(
+    note: Note,
+    onShowDetails: (Note) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showDropdown by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .pointerInput(Unit){
+            .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = {onShowDetails(note)},
+                    onTap = { onShowDetails(note) },
                     onLongPress = {
                         showDropdown = true
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
                     }
                 )
             }
     ) {
-        Row (
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = note.title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(16.dp)
-            )
-            AnimatedVisibility(
-                visible = showDropdown,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box{
-                    IconButton(onClick = {showDropdown = false}){
-                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                Text(
+                    text = note.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Box {
+                    IconButton(
+                        onClick = { showDropdown = true }
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
                     }
+
                     DropdownMenu(
                         expanded = showDropdown,
                         onDismissRequest = { showDropdown = false }
-                    ){
+                    ) {
                         DropdownMenuItem(
                             text = { Text("Edit") },
                             onClick = {
@@ -256,7 +261,36 @@ fun NoteListItem(note: Note,
                                 showDropdown = false
                             }
                         )
+                    }
+                }
+            }
 
+            if (note.content.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = note.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (note.tags.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start,
+                    maxItemsInEachRow = Int.MAX_VALUE
+                ) {
+                    note.tags.forEach { tag ->
+                        AssistChip(
+                            onClick = { },
+                            label = { Text(tag) },
+                            modifier = Modifier.padding(end = 4.dp, bottom = 4.dp),
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        )
                     }
                 }
             }
@@ -296,9 +330,13 @@ fun NoteItem(note: Note) {
 }
 
 @Composable
-fun AddNoteDialog(onDismiss: () -> Unit, onNoteAdded: (String, String) -> Unit) {
+fun AddNoteDialog(
+    onDismiss: () -> Unit,
+    onNoteAdded: (String, String, List<String>) -> Unit
+) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
+    var tags by remember { mutableStateOf(emptyList<String>()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -317,17 +355,22 @@ fun AddNoteDialog(onDismiss: () -> Unit, onNoteAdded: (String, String) -> Unit) 
                     label = { Text("Content") },
                     modifier = Modifier.height(150.dp)
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                TagInput(
+                    tags = tags,
+                    onTagsChanged = { tags = it }
+                )
             }
         },
         confirmButton = {
-            Button(onClick = {
-                if (title.isNotEmpty() || content.isNotEmpty()){
-                    onNoteAdded(title, content)
-                }
-                else{
+            Button(
+                onClick = {
+                    if (title.isNotEmpty() || content.isNotEmpty()) {
+                        onNoteAdded(title, content, tags)
+                    }
                     onDismiss()
                 }
-            }) {
+            ) {
                 Text("Add")
             }
         },
