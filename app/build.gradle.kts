@@ -6,6 +6,7 @@ plugins {
 }
 
 android {
+
     namespace = "com.beakoninc.locusnotes"
     compileSdk = 34
 
@@ -64,6 +65,12 @@ android {
             )
         }
     }
+    packagingOptions {
+        resources {
+            excludes += "/META-INF/androidx.compose.material3_material3.version"
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
@@ -76,7 +83,6 @@ dependencies {
     implementation(libs.ui.tooling.preview)
     implementation(libs.material3)
     implementation(libs.androidx.preference.ktx)
-    implementation(libs.androidx.material3.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
@@ -84,6 +90,7 @@ dependencies {
     androidTestImplementation(libs.ui.test.junit4)
     debugImplementation(libs.ui.tooling)
     debugImplementation(libs.ui.test.manifest)
+    implementation("com.google.accompanist:accompanist-permissions:0.31.1-alpha")
 
     // Hilt
     implementation(libs.hilt.android)
@@ -110,7 +117,10 @@ dependencies {
     implementation(libs.play.services.location)
 
     // For Compose integration
+    implementation(libs.accompanist.permissions)
     implementation(libs.accompanist.pager)
 
     implementation(libs.androidx.startup)
+
+
 }

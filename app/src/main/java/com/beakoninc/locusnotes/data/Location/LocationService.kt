@@ -1,14 +1,14 @@
 package com.beakoninc.locusnotes.data.location
 
 import android.content.Context
+import android.location.Address
 import android.location.Geocoder
 import android.os.Build
 import com.beakoninc.locusnotes.data.model.Location
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationToken
-import com.google.android.gms.tasks.CancellationTokenSource
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -16,28 +16,31 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import android.util.Log
+import java.util.Locale
 
 @Singleton
 class LocationService @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
-    private val geocoder = Geocoder(context)
+    private val geocoder = Geocoder(context, Locale.getDefault())
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
     suspend fun getCurrentLocation(): android.location.Location? =
         suspendCancellableCoroutine { continuation ->
             try {
-                val cancellationToken = CancellationTokenSource().token
                 fusedLocationClient.getCurrentLocation(
                     Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                    cancellationToken
+                    null
                 ).addOnSuccessListener { location ->
                     continuation.resume(location)
                 }.addOnFailureListener { exception ->
-                    continuation.resumeWithException(exception)
+                    Log.e("LocationService", "Error getting location", exception)
+                    continuation.resume(null)
                 }
             } catch (e: SecurityException) {
+                Log.e("LocationService", "Security exception getting location", e)
                 continuation.resume(null)
             }
         }
@@ -45,65 +48,84 @@ class LocationService @Inject constructor(
     suspend fun searchLocations(query: String, currentLocation: Location? = null): List<Location> =
         withContext(Dispatchers.IO) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val results = ArrayList<Location>()
-                    geocoder.getFromLocationName(query, 5) { addresses ->
-                        addresses.forEach { address ->
-                            results.add(
-                                Location(
-                                    name = address.featureName ?: address.locality ?: query,
-                                    latitude = address.latitude,
-                                    longitude = address.longitude,
-                                    address = address.getAddressLine(0)
-                                )
-                            )
+                val results = mutableListOf<Location>()
+
+                // First try to get user's current location
+                val userLocation = getCurrentLocation()
+
+                if (userLocation != null) {
+                    Log.d("LocationService", "Searching near user location: ${userLocation.latitude}, ${userLocation.longitude}")
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        geocoder.getFromLocation(
+                            userLocation.latitude,
+                            userLocation.longitude,
+                            15
+                        ) { addresses ->
+                            addresses
+                                .filter { address ->
+                                    addressMatchesQuery(address, query)
+                                }
+                                .forEach { address ->
+                                    results.add(createLocationFromAddress(address))
+                                }
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        geocoder.getFromLocation(
+                            userLocation.latitude,
+                            userLocation.longitude,
+                            15
+                        )?.filter { address ->
+                            addressMatchesQuery(address, query)
+                        }?.forEach { address ->
+                            results.add(createLocationFromAddress(address))
                         }
                     }
-                    sortByProximity(results, currentLocation)
-                } else {
-                    @Suppress("DEPRECATION")
-                    geocoder.getFromLocationName(query, 5)?.map { address ->
-                        Location(
-                            name = address.featureName ?: address.locality ?: query,
-                            latitude = address.latitude,
-                            longitude = address.longitude,
-                            address = address.getAddressLine(0)
-                        )
-                    }?.let { locations ->
-                        sortByProximity(locations, currentLocation)
-                    } ?: emptyList()
                 }
+
+                Log.d("LocationService", "Found ${results.size} nearby results")
+                results
+
             } catch (e: Exception) {
+                Log.e("LocationService", "Error searching locations", e)
                 emptyList()
             }
         }
 
-    private fun sortByProximity(locations: List<Location>, currentLocation: Location?): List<Location> {
-        if (currentLocation == null) return locations
-
-        return locations.sortedBy { location ->
-            calculateDistance(
-                currentLocation.latitude,
-                currentLocation.longitude,
-                location.latitude,
-                location.longitude
-            )
-        }
+    private fun addressMatchesQuery(address: Address, query: String): Boolean {
+        val searchQuery = query.lowercase()
+        return address.featureName?.lowercase()?.contains(searchQuery) == true ||
+                address.thoroughfare?.lowercase()?.contains(searchQuery) == true ||
+                address.locality?.lowercase()?.contains(searchQuery) == true ||
+                address.premises?.lowercase()?.contains(searchQuery) == true ||
+                address.subLocality?.lowercase()?.contains(searchQuery) == true
     }
 
-    private fun calculateDistance(
-        lat1: Double,
-        lon1: Double,
-        lat2: Double,
-        lon2: Double
-    ): Double {
-        val R = 6371 // Earth's radius in kilometers
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return R * c
+    private fun createLocationFromAddress(address: Address): Location {
+        val name = buildDisplayName(address)
+        Log.d("LocationService", "Creating location: $name at ${address.latitude}, ${address.longitude}")
+        return Location(
+            name = name,
+            latitude = address.latitude,
+            longitude = address.longitude,
+            address = address.getAddressLine(0)
+        )
+    }
+
+    private fun buildDisplayName(address: Address): String {
+        return when {
+            !address.featureName.isNullOrBlank() && !address.featureName.contains(Regex("^\\d+$")) ->
+                address.featureName
+            !address.thoroughfare.isNullOrBlank() -> {
+                if (!address.subThoroughfare.isNullOrBlank()) {
+                    "${address.subThoroughfare} ${address.thoroughfare}"
+                } else {
+                    address.thoroughfare
+                }
+            }
+            !address.locality.isNullOrBlank() -> address.locality
+            else -> address.getAddressLine(0) ?: ""
+        }.trim()
     }
 }

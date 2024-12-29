@@ -2,6 +2,7 @@ package com.beakoninc.locusnotes.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Location
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
@@ -17,7 +18,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class NoteViewModel @Inject constructor(
-    private val noteRepository: NoteRepository
+    private val noteRepository: NoteRepository,
+    val locationService: LocationService
 ) : ViewModel() {
 
     val notesFlow: StateFlow<List<Note>> = noteRepository.getAllNotesFlow()

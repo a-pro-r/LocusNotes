@@ -34,6 +34,9 @@ import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.ui.components.LocationAutocomplete
 import com.beakoninc.locusnotes.ui.components.SearchBar
 import com.beakoninc.locusnotes.ui.components.TagInput
+import androidx.compose.ui.platform.LocalContext
+import com.beakoninc.locusnotes.data.location.LocationService
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +47,7 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     var selectedNoteId by remember { mutableStateOf<String?>(null) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+
 
     val searchResults by viewModel.searchResults.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -111,7 +115,8 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
                     location = location
                 )
                 showAddNoteDialog = false
-            }
+            },
+            locationService = viewModel.locationService
         )
     }
 
@@ -339,7 +344,8 @@ fun NoteItem(note: Note) {
 @Composable
 fun AddNoteDialog(
     onDismiss: () -> Unit,
-    onNoteAdded: (String, String, List<String>, Location?) -> Unit
+    onNoteAdded: (String, String, List<String>, Location?) -> Unit,
+    locationService: LocationService
 ) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
@@ -371,7 +377,8 @@ fun AddNoteDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 LocationAutocomplete(
                     initialLocation = location,
-                    onLocationSelected = { location = it }
+                    onLocationSelected = { location = it },
+                    locationService = locationService
                 )
             }
         },
