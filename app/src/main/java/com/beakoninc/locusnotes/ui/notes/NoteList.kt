@@ -29,7 +29,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.beakoninc.locusnotes.data.model.Location
 import com.beakoninc.locusnotes.data.model.Note
+import com.beakoninc.locusnotes.ui.components.LocationAutocomplete
 import com.beakoninc.locusnotes.ui.components.SearchBar
 import com.beakoninc.locusnotes.ui.components.TagInput
 
@@ -101,8 +103,13 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     if (showAddNoteDialog) {
         AddNoteDialog(
             onDismiss = { showAddNoteDialog = false },
-            onNoteAdded = { title, content, tags ->
-                viewModel.addNote(title, content, tags)
+            onNoteAdded = { title, content, tags, location ->
+                viewModel.addNote(
+                    title = title,
+                    content = content,
+                    tags = tags,
+                    location = location
+                )
                 showAddNoteDialog = false
             }
         )
@@ -332,11 +339,12 @@ fun NoteItem(note: Note) {
 @Composable
 fun AddNoteDialog(
     onDismiss: () -> Unit,
-    onNoteAdded: (String, String, List<String>) -> Unit
+    onNoteAdded: (String, String, List<String>, Location?) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf(emptyList<String>()) }
+    var location by remember { mutableStateOf<Location?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -360,13 +368,18 @@ fun AddNoteDialog(
                     tags = tags,
                     onTagsChanged = { tags = it }
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                LocationAutocomplete(
+                    initialLocation = location,
+                    onLocationSelected = { location = it }
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (title.isNotEmpty() || content.isNotEmpty()) {
-                        onNoteAdded(title, content, tags)
+                        onNoteAdded(title, content, tags, location)
                     }
                     onDismiss()
                 }

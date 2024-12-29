@@ -2,6 +2,7 @@ package com.beakoninc.locusnotes.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.beakoninc.locusnotes.data.model.Location
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,12 +41,22 @@ class NoteViewModel @Inject constructor(
     }
 
 
-    fun addNote(title: String, content: String, tags: List<String>) {
+    // Update the addNote function in NoteViewModel
+    fun addNote(
+        title: String,
+        content: String,
+        tags: List<String>,
+        location: Location? = null
+    ) {
         viewModelScope.launch {
             val newNote = Note(
                 title = title,
                 content = content,
                 tags = tags,
+                locationName = location?.name,
+                latitude = location?.latitude,
+                longitude = location?.longitude,
+                address = location?.address,
                 createdAt = System.currentTimeMillis()
             )
             noteRepository.insertNote(newNote)

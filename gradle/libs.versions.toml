@@ -15,6 +15,7 @@ play-services-location = "21.0.1"
 accompanist = "0.28.0"
 app-startup = "1.1.1"
 preference-ktx = "1.2.1"
+material3-android = "1.3.1"
 
 [libraries]
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
@@ -43,6 +44,7 @@ play-services-location = { group = "com.google.android.gms", name = "play-servic
 accompanist-pager = { group = "com.google.accompanist", name = "accompanist-pager", version.ref = "accompanist" }
 androidx-startup = { group = "androidx.startup", name = "startup-runtime", version.ref = "app-startup" }
 androidx-preference-ktx = { group = "androidx.preference", name = "preference-ktx", version.ref = "preference-ktx" }
+androidx-material3-android = { group = "androidx.compose.material3", name = "material3-android", version.ref = "material3-android" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -14,6 +14,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.beakoninc.locusnotes.data.location.LocationService
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -26,6 +27,23 @@ object AppModule {
             )
         }
     }
+    // Migration from version 2 to 3 (adding location fields)
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "ALTER TABLE notes ADD COLUMN locationName TEXT DEFAULT NULL"
+            )
+            database.execSQL(
+                "ALTER TABLE notes ADD COLUMN latitude REAL DEFAULT NULL"
+            )
+            database.execSQL(
+                "ALTER TABLE notes ADD COLUMN longitude REAL DEFAULT NULL"
+            )
+            database.execSQL(
+                "ALTER TABLE notes ADD COLUMN address TEXT DEFAULT NULL"
+            )
+        }
+    }
 
     @Provides
     @Singleton
@@ -35,7 +53,7 @@ object AppModule {
             AppDatabase::class.java,
             "notes_database"
         )
-            .addMigrations(MIGRATION_1_2)  // Add migration strategy
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)  // Add migration strategy
             // Alternatively for development only:
             // .fallbackToDestructiveMigration()
             .build()
@@ -50,5 +68,10 @@ object AppModule {
     @Singleton
     fun provideNoteRepository(noteRepositoryImpl: NoteRepositoryImpl): NoteRepository {
         return noteRepositoryImpl
+    }
+    @Provides
+    @Singleton
+    fun provideLocationService(@ApplicationContext context: Context): LocationService {
+        return LocationService(context)
     }
 }

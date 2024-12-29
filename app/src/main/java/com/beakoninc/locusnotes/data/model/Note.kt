@@ -11,5 +11,9 @@ data class Note(
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = createdAt,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val locationName: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val address: String? = null
 )
