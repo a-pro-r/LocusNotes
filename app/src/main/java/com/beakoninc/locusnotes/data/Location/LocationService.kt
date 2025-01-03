@@ -1,33 +1,36 @@
 package com.beakoninc.locusnotes.data.location
 
 import android.content.Context
-import android.location.Address
-import android.location.Geocoder
-import android.os.Build
-import com.beakoninc.locusnotes.data.model.Location
+import android.location.Location
+import android.util.Log
+import com.beakoninc.locusnotes.data.model.Location as AppLocation
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import android.util.Log
-import java.util.Locale
 
 @Singleton
 class LocationService @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val geocoder = Geocoder(context, Locale.getDefault())
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
-    suspend fun getCurrentLocation(): android.location.Location? =
+    private val NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org/search"
+    private val USER_AGENT = "LocusNotes Android App"
+
+    suspend fun getCurrentLocation(): Location? =
         suspendCancellableCoroutine { continuation ->
             try {
                 fusedLocationClient.getCurrentLocation(
@@ -45,87 +48,191 @@ class LocationService @Inject constructor(
             }
         }
 
-    suspend fun searchLocations(query: String, currentLocation: Location? = null): List<Location> =
-        withContext(Dispatchers.IO) {
-            try {
-                val results = mutableListOf<Location>()
+    suspend fun searchLocations(query: String): List<AppLocation> = withContext(Dispatchers.IO) {
+        if (query.length < 3) return@withContext emptyList() // Don't search for very short queries
 
-                // First try to get user's current location
-                val userLocation = getCurrentLocation()
+        try {
+            delay(1000) // Nominatim's usage policy
 
-                if (userLocation != null) {
-                    Log.d("LocationService", "Searching near user location: ${userLocation.latitude}, ${userLocation.longitude}")
+            val currentLocation = getCurrentLocation()
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = buildSearchUrl(encodedQuery, currentLocation)
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        geocoder.getFromLocation(
-                            userLocation.latitude,
-                            userLocation.longitude,
-                            15
-                        ) { addresses ->
-                            addresses
-                                .filter { address ->
-                                    addressMatchesQuery(address, query)
-                                }
-                                .forEach { address ->
-                                    results.add(createLocationFromAddress(address))
-                                }
-                        }
-                    } else {
-                        @Suppress("DEPRECATION")
-                        geocoder.getFromLocation(
-                            userLocation.latitude,
-                            userLocation.longitude,
-                            15
-                        )?.filter { address ->
-                            addressMatchesQuery(address, query)
-                        }?.forEach { address ->
-                            results.add(createLocationFromAddress(address))
-                        }
-                    }
-                }
-
-                Log.d("LocationService", "Found ${results.size} nearby results")
-                results
-
-            } catch (e: Exception) {
-                Log.e("LocationService", "Error searching locations", e)
-                emptyList()
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = 15000
+                readTimeout = 15000
             }
+
+            try {
+                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    Log.d("LocationService", "Search response for '$query': $response")
+                    parseNominatimResponse(response, currentLocation)
+                } else {
+                    Log.e("LocationService", "HTTP Error: ${connection.responseCode}")
+                    emptyList()
+                }
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: Exception) {
+            Log.e("LocationService", "Error searching locations", e)
+            emptyList()
+        }
+    }
+
+    private fun buildSearchUrl(query: String, currentLocation: Location?): URL {
+        val urlBuilder = StringBuilder("$NOMINATIM_BASE_URL?")
+        urlBuilder.append("q=$query")
+        urlBuilder.append("&format=json")
+        urlBuilder.append("&addressdetails=1") // Get detailed address components
+        urlBuilder.append("&limit=5") // Limit to 5 most relevant results
+
+        // Add location bias if available
+        if (currentLocation != null) {
+            urlBuilder.append("&lat=${currentLocation.latitude}")
+            urlBuilder.append("&lon=${currentLocation.longitude}")
+            urlBuilder.append("&bounded=1") // Prefer results near the location
         }
 
-    private fun addressMatchesQuery(address: Address, query: String): Boolean {
-        val searchQuery = query.lowercase()
-        return address.featureName?.lowercase()?.contains(searchQuery) == true ||
-                address.thoroughfare?.lowercase()?.contains(searchQuery) == true ||
-                address.locality?.lowercase()?.contains(searchQuery) == true ||
-                address.premises?.lowercase()?.contains(searchQuery) == true ||
-                address.subLocality?.lowercase()?.contains(searchQuery) == true
+        return URL(urlBuilder.toString())
     }
 
-    private fun createLocationFromAddress(address: Address): Location {
-        val name = buildDisplayName(address)
-        Log.d("LocationService", "Creating location: $name at ${address.latitude}, ${address.longitude}")
-        return Location(
-            name = name,
-            latitude = address.latitude,
-            longitude = address.longitude,
-            address = address.getAddressLine(0)
-        )
-    }
+    private fun parseNominatimResponse(
+        jsonString: String,
+        currentLocation: Location?
+    ): List<AppLocation> {
+        return try {
+            val jsonArray = JSONArray(jsonString)
+            val locations = mutableListOf<AppLocation>()
 
-    private fun buildDisplayName(address: Address): String {
-        return when {
-            !address.featureName.isNullOrBlank() && !address.featureName.contains(Regex("^\\d+$")) ->
-                address.featureName
-            !address.thoroughfare.isNullOrBlank() -> {
-                if (!address.subThoroughfare.isNullOrBlank()) {
-                    "${address.subThoroughfare} ${address.thoroughfare}"
-                } else {
-                    address.thoroughfare
-                }
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val address = obj.getJSONObject("address")
+
+                // Build primary name
+                val name = buildPrimaryName(address, obj)
+
+                val location = AppLocation(
+                    name = name,
+                    latitude = obj.getDouble("lat"),
+                    longitude = obj.getDouble("lon"),
+                    address = formatFullAddress(address),
+                    placeId = obj.getString("place_id"),
+                    streetNumber = address.optString("house_number"),
+                    route = address.optString("road"),
+                    locality = getLocality(address),
+                    administrativeArea = address.optString("state"),
+                    country = address.optString("country"),
+                    postalCode = address.optString("postcode")
+                )
+
+                // Add distance from current location if available
+                currentLocation?.let {
+                    val distance = calculateDistance(
+                        it.latitude, it.longitude,
+                        location.latitude, location.longitude
+                    )
+                    // Only add locations within reasonable distance (e.g., 50km)
+                    if (distance <= 50) {
+                        locations.add(location)
+                    }
+                } ?: locations.add(location)
             }
-            !address.locality.isNullOrBlank() -> address.locality
-            else -> address.getAddressLine(0) ?: ""
-        }.trim()
+
+            locations.sortedBy {
+                calculateRelevanceScore(it, query = jsonString, currentLocation)
+            }
+        } catch (e: Exception) {
+            Log.e("LocationService", "Error parsing response", e)
+            emptyList()
+        }
+    }
+
+    private fun buildPrimaryName(address: JSONObject, fullObject: JSONObject): String {
+        return buildString {
+            // Try to build a readable name from components
+            val houseName = address.optString("house_name")
+            val houseNumber = address.optString("house_number")
+            val road = address.optString("road")
+            val amenity = address.optString("amenity")
+
+            when {
+                amenity.isNotEmpty() -> append(amenity)
+                houseName.isNotEmpty() -> append(houseName)
+                houseNumber.isNotEmpty() && road.isNotEmpty() ->
+                    append("$houseNumber $road")
+                road.isNotEmpty() -> append(road)
+                else -> append(fullObject.optString("display_name").split(",")[0])
+            }
+
+            // Add locality if not already included
+            val locality = getLocality(address)
+            if (locality.isNotEmpty() && !contains(locality, ignoreCase = true)) {
+                append(", $locality")
+            }
+        }
+    }
+
+    private fun formatFullAddress(address: JSONObject): String {
+        return buildString {
+            val components = listOf(
+                address.optString("house_number"),
+                address.optString("road"),
+                getLocality(address),
+                address.optString("state"),
+                address.optString("postcode"),
+                address.optString("country")
+            )
+
+            append(components.filter { it.isNotEmpty() }.joinToString(", "))
+        }
+    }
+
+    private fun getLocality(address: JSONObject): String {
+        return address.optString("city")
+            .ifEmpty { address.optString("town") }
+            .ifEmpty { address.optString("village") }
+            .ifEmpty { address.optString("suburb") }
+    }
+
+    private fun calculateDistance(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Double {
+        val r = 6371 // Earth's radius in km
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon/2) * Math.sin(dLon/2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+        return r * c
+    }
+
+    private fun calculateRelevanceScore(
+        location: AppLocation,
+        query: String,
+        currentLocation: Location?
+    ): Double {
+        var score = 0.0
+
+        // Distance score (if current location available)
+        currentLocation?.let {
+            val distance = calculateDistance(
+                it.latitude, it.longitude,
+                location.latitude, location.longitude
+            )
+            score += distance * 0.5 // Weight distance less than exact matches
+        }
+
+        // Exact name matches
+        if (location.name.contains(query, ignoreCase = true)) {
+            score -= 100 // Prioritize exact matches
+        }
+
+        return score
     }
 }

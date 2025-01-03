@@ -16,15 +16,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Location
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
-import com.google.accompanist.permissions.PermissionState
-import com.google.accompanist.permissions.PermissionStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -38,57 +37,32 @@ fun LocationAutocomplete(
     var query by remember { mutableStateOf(initialLocation?.name ?: "") }
     var locations by remember { mutableStateOf<List<Location>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
-    var currentLocation by remember { mutableStateOf<Location?>(null) }
     var showSuggestions by remember { mutableStateOf(false) }
+    var lastSearchTime by remember { mutableStateOf(0L) }
     val coroutineScope = rememberCoroutineScope()
 
-    val locationPermissionState = rememberPermissionState(
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) { isGranted ->
-        if (isGranted) {
-            coroutineScope.launch {
-                locationService.getCurrentLocation()?.let { location ->
-                    currentLocation = Location(
-                        name = "Current Location",
-                        latitude = location.latitude,
-                        longitude = location.longitude
-                    )
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (locationPermissionState.status == PermissionStatus.Granted) {
-            locationService.getCurrentLocation()?.let { location ->
-                currentLocation = Location(
-                    name = "Current Location",
-                    latitude = location.latitude,
-                    longitude = location.longitude
-                )
-            }
-        } else {
-            locationPermissionState.launchPermissionRequest()
-        }
-    }
-
     Column(modifier = Modifier.fillMaxWidth()) {
-        TextField(
+        OutlinedTextField(
             value = query,
             onValueChange = { newQuery ->
                 query = newQuery
                 if (newQuery.isEmpty()) {
                     onLocationSelected(null)
                     showSuggestions = false
+                    locations = emptyList()
                 } else {
                     showSuggestions = true
                     coroutineScope.launch {
-                        isSearching = true
-                        delay(300) // Debounce typing
-                        try {
-                            locations = locationService.searchLocations(newQuery, currentLocation)
-                        } finally {
-                            isSearching = false
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastSearchTime >= 500) {
+                            isSearching = true
+                            delay(500)
+                            try {
+                                locations = locationService.searchLocations(newQuery)
+                            } finally {
+                                isSearching = false
+                                lastSearchTime = currentTime
+                            }
                         }
                     }
                 }
@@ -96,10 +70,7 @@ fun LocationAutocomplete(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Search location") },
             leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search"
-                )
+                Icon(Icons.Default.LocationOn, "Location")
             },
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -107,14 +78,16 @@ fun LocationAutocomplete(
                         query = ""
                         onLocationSelected(null)
                         showSuggestions = false
+                        locations = emptyList()
                     }) {
-                        Icon(Icons.Default.Close, "Clear search")
+                        Icon(Icons.Default.Close, "Clear")
                     }
                 }
             },
             singleLine = true,
-            colors = TextFieldDefaults.textFieldColors(
-                containerColor = MaterialTheme.colorScheme.surface
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
             )
         )
 
@@ -123,11 +96,12 @@ fun LocationAutocomplete(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            Card(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 300.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                tonalElevation = 2.dp,
+                shadowElevation = 4.dp
             ) {
                 if (isSearching) {
                     Box(
@@ -185,11 +159,15 @@ private fun LocationSuggestionItem(
             Column {
                 Text(
                     text = location.name,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                if (!location.address.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                buildAddressText(location)?.let { address ->
                     Text(
-                        text = location.address,
+                        text = address,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -199,5 +177,37 @@ private fun LocationSuggestionItem(
             }
         }
     }
-    Divider()
+    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+}
+
+@Composable
+private fun buildAddressText(location: Location): String? {
+    if (location.address.isNullOrBlank()) {
+        return buildString {
+            val components = mutableListOf<String>()
+
+            if (!location.route.isNullOrBlank()) {
+                if (!location.streetNumber.isNullOrBlank()) {
+                    components.add("${location.streetNumber} ${location.route}")
+                } else {
+                    components.add(location.route)
+                }
+            }
+
+            if (!location.locality.isNullOrBlank()) {
+                components.add(location.locality)
+            }
+
+            if (!location.administrativeArea.isNullOrBlank()) {
+                components.add(location.administrativeArea)
+            }
+
+            if (!location.country.isNullOrBlank()) {
+                components.add(location.country)
+            }
+
+            append(components.joinToString(", "))
+        }.takeIf { it.isNotEmpty() }
+    }
+    return location.address
 }
