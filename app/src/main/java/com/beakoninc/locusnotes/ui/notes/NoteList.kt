@@ -10,6 +10,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -35,6 +37,7 @@ import com.beakoninc.locusnotes.ui.components.LocationAutocomplete
 import com.beakoninc.locusnotes.ui.components.SearchBar
 import com.beakoninc.locusnotes.ui.components.TagInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import com.beakoninc.locusnotes.data.location.LocationService
 
 
@@ -310,16 +313,97 @@ fun NoteListItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun NoteDetailDialog(note: Note, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(note.title) },
+        title = { Text(note.title, style = MaterialTheme.typography.headlineSmall) },
         text = {
-            Text(note.content)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Content
+                Text(
+                    note.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Tags Section
+                if (note.tags.isNotEmpty()) {
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        "Tags",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        maxItemsInEachRow = Int.MAX_VALUE
+                    ) {
+                        note.tags.forEach { tag ->
+                            AssistChip(
+                                onClick = { },
+                                label = { Text(tag) },
+                                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp),
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Location Section
+                if (note.locationName != null) {
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        "Location",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                note.locationName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            note.address?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            if (note.latitude != null && note.longitude != null) {
+                                Text(
+                                    "Coordinates: ${String.format("%.6f", note.latitude)}, ${String.format("%.6f", note.longitude)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
-            Button(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) {
                 Text("Close")
             }
         }
