@@ -133,7 +133,6 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     }
 
     if (showEditDialog) {
-        // Modified: Use selectedNoteId to get the most up-to-date note for editing
         selectedNoteId?.let { id ->
             viewModel.getNote(id)?.let { note ->
                 EditNoteDialog(
@@ -141,11 +140,21 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
                     onDismiss = {
                         showEditDialog = false
                     },
-                    onNoteEdited = { title, content ->
-                        val updatedNote = note.copy(title = title, content = content)
+                    onNoteEdited = { title, content, tags, location ->
+                        val updatedNote = note.copy(
+                            title = title,
+                            content = content,
+                            tags = tags,
+                            locationName = location?.name,
+                            latitude = location?.latitude,
+                            longitude = location?.longitude,
+                            address = location?.address,
+                            updatedAt = System.currentTimeMillis()
+                        )
                         viewModel.updateNote(updatedNote)
                         showEditDialog = false
-                    }
+                    },
+                    locationService = viewModel.locationService
                 )
             }
         }
@@ -485,7 +494,7 @@ fun AddNoteDialog(
         }
     )
 }
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditNoteDialog(
     note: Note,
@@ -495,28 +504,67 @@ fun EditNoteDialog(
 ) {
     var title by remember { mutableStateOf(note.title) }
     var content by remember { mutableStateOf(note.content) }
+    var tags by remember { mutableStateOf(note.tags) }
+
+    // initial location state if note has location data
+    var initialLocation by remember {
+        mutableStateOf<Location?>(
+            if (note.locationName != null && note.latitude != null && note.longitude != null) {
+                Location(
+                    name = note.locationName,
+                    latitude = note.latitude,
+                    longitude = note.longitude,
+                    address = note.address
+                )
+            } else null
+        )
+    }
+    var selectedLocation by remember { mutableStateOf(initialLocation) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Note") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 TextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") }
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+
                 TextField(
                     value = content,
                     onValueChange = { content = it },
                     label = { Text("Content") },
-                    modifier = Modifier.height(200.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                )
+
+                TagInput(
+                    tags = tags,
+                    onTagsChanged = { tags = it }
+                )
+
+                LocationAutocomplete(
+                    initialLocation = initialLocation,
+                    onLocationSelected = { selectedLocation = it },
+                    locationService = locationService
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { onNoteEdited(title, content) }) {
+            Button(
+                onClick = {
+                    onNoteEdited(title, content, tags, selectedLocation)
+                }
+            ) {
                 Text("Save")
             }
         },
