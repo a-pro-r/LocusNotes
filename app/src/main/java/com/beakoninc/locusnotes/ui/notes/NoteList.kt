@@ -490,7 +490,8 @@ fun AddNoteDialog(
 fun EditNoteDialog(
     note: Note,
     onDismiss: () -> Unit,
-    onNoteEdited: (String, String) -> Unit
+    onNoteEdited: (String, String, List<String>, Location?) -> Unit,
+    locationService: LocationService
 ) {
     var title by remember { mutableStateOf(note.title) }
     var content by remember { mutableStateOf(note.content) }
