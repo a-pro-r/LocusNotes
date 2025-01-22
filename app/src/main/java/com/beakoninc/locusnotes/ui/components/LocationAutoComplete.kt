@@ -1,31 +1,31 @@
 package com.beakoninc.locusnotes.ui.components
 
 import android.Manifest
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Location
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Divider
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import com.google.accompanist.permissions.isGranted
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -38,8 +38,28 @@ fun LocationAutocomplete(
     var locations by remember { mutableStateOf<List<Location>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
     var showSuggestions by remember { mutableStateOf(false) }
-    var lastSearchTime by remember { mutableStateOf(0L) }
+    var currentLocation by remember { mutableStateOf<Location?>(null) }
     val coroutineScope = rememberCoroutineScope()
+
+    val locationPermissionState = rememberPermissionState(
+        permission = Manifest.permission.ACCESS_FINE_LOCATION,
+        onPermissionResult = { isGranted ->
+            if (isGranted) {
+                // Launch coroutine to get current location when permission is granted
+                coroutineScope.launch {
+                    currentLocation = locationService.getCurrentLocation()
+                }
+            }
+        }
+    )
+
+
+    // Get current location when composable is first created if permission is already granted
+    LaunchedEffect(Unit) {
+        if (locationPermissionState.status.isGranted) {
+            currentLocation = locationService.getCurrentLocation()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -53,16 +73,16 @@ fun LocationAutocomplete(
                 } else {
                     showSuggestions = true
                     coroutineScope.launch {
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastSearchTime >= 500) {
-                            isSearching = true
-                            delay(500)
-                            try {
-                                locations = locationService.searchLocations(newQuery)
-                            } finally {
-                                isSearching = false
-                                lastSearchTime = currentTime
-                            }
+                        isSearching = true
+                        try {
+                            locationService.searchLocations(newQuery, currentLocation)
+                                .collect { results ->
+                                    locations = results
+                                    isSearching = false
+                                }
+                        } catch (e: Exception) {
+                            Log.e("LocationAutoComplete", "Error searching", e)
+                            isSearching = false
                         }
                     }
                 }
@@ -84,11 +104,7 @@ fun LocationAutocomplete(
                     }
                 }
             },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            )
+            singleLine = true
         )
 
         AnimatedVisibility(
@@ -161,53 +177,25 @@ private fun LocationSuggestionItem(
                     text = location.name,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.Medium
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
+                    )
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                buildAddressText(location)?.let { address ->
+                location.address?.let { address ->
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = address,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                location.distanceMeters?.let { distance ->
+                    Text(
+                        text = "%.1f km away".format(distance / 1000),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
     }
     Divider(color = MaterialTheme.colorScheme.outlineVariant)
-}
-
-@Composable
-private fun buildAddressText(location: Location): String? {
-    if (location.address.isNullOrBlank()) {
-        return buildString {
-            val components = mutableListOf<String>()
-
-            if (!location.route.isNullOrBlank()) {
-                if (!location.streetNumber.isNullOrBlank()) {
-                    components.add("${location.streetNumber} ${location.route}")
-                } else {
-                    components.add(location.route)
-                }
-            }
-
-            if (!location.locality.isNullOrBlank()) {
-                components.add(location.locality)
-            }
-
-            if (!location.administrativeArea.isNullOrBlank()) {
-                components.add(location.administrativeArea)
-            }
-
-            if (!location.country.isNullOrBlank()) {
-                components.add(location.country)
-            }
-
-            append(components.joinToString(", "))
-        }.takeIf { it.isNotEmpty() }
-    }
-    return location.address
 }
