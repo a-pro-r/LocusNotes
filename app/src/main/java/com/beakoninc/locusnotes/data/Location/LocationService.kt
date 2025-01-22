@@ -1,17 +1,17 @@
 package com.beakoninc.locusnotes.data.location
 
-
 import android.content.Context
 import android.util.Log
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.beakoninc.locusnotes.data.model.Location
+import kotlin.coroutines.resume
 
 @Singleton
 class LocationService @Inject constructor(
@@ -31,6 +32,35 @@ class LocationService @Inject constructor(
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    private val fusedLocationClient: FusedLocationProviderClient =
+        LocationServices.getFusedLocationProviderClient(context)
+
+    suspend fun getCurrentLocation(): Location? = suspendCancellableCoroutine { continuation ->
+        try {
+            fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                null
+            ).addOnSuccessListener { location ->
+                if (location != null) {
+                    continuation.resume(
+                        Location(
+                            name = "Current Location",
+                            latitude = location.latitude,
+                            longitude = location.longitude,
+                        )
+                    )
+                } else {
+                    continuation.resume(null)
+                }
+            }.addOnFailureListener { exception ->
+                Log.e("LocationService", "Error getting location", exception)
+                continuation.resume(null)
+            }
+        } catch (e: SecurityException) {
+            Log.e("LocationService", "Security exception getting location", e)
+            continuation.resume(null)
+        }
+    }
 
     suspend fun searchLocations(
         query: String,
@@ -42,7 +72,6 @@ class LocationService @Inject constructor(
         }
 
         try {
-            // Build URL with location bias if available
             val urlBuilder = HttpUrl.Builder()
                 .scheme("https")
                 .host("photon.komoot.io")
