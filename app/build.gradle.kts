@@ -91,6 +91,7 @@ dependencies {
     debugImplementation(libs.ui.tooling)
     debugImplementation(libs.ui.test.manifest)
     implementation("com.google.accompanist:accompanist-permissions:0.31.1-alpha")
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // Hilt
     implementation(libs.hilt.android)
