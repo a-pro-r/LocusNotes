@@ -11,5 +11,6 @@ data class Location(
     val locality: String? = null,
     val administrativeArea: String? = null,
     val country: String? = null,
-    val postalCode: String? = null
+    val postalCode: String? = null,
+    val distanceMeters: Double? = null
 )
