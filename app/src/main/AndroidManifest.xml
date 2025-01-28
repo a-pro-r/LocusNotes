@@ -9,10 +9,9 @@
 
     <!-- DANGEROUS PERMISSIONS, must request -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <application
         android:name=".LocusNotesApplication"
@@ -35,6 +34,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".data.location.ActivityRecognitionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.beakoninc.locusnotes.ACTIVITY_TRANSITION_ACTION" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
