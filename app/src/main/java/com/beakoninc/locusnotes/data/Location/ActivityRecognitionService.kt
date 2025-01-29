@@ -6,8 +6,6 @@ import android.content.Intent
 import android.util.Log
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionResult
-import com.google.android.gms.location.ActivityTransition
-import com.google.android.gms.location.ActivityTransitionRequest
 import com.google.android.gms.location.DetectedActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,35 +14,24 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class ActivityRecognitionService @Inject constructor(
+class ActivityRecognitionManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val _currentActivity = MutableStateFlow<String>("UNKNOWN")
-    val currentActivity: StateFlow<String> = _currentActivity
-
     companion object {
         private const val TAG = "ActivityRecognition"
-        const val ACTIVITY_TRANSITION_ACTION = "com.beakoninc.locusnotes.ACTIVITY_TRANSITION_ACTION"
+        const val UPDATE_INTERVAL = 0L  // 0 means as fast as possible
+        const val ACTION_PROCESS_ACTIVITY = "com.beakoninc.locusnotes.PROCESS_ACTIVITY"
     }
 
-    fun startActivityRecognition() {
-        val transitions = listOf(
-            ActivityTransition.Builder()
-                .setActivityType(DetectedActivity.WALKING)
-                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
-                .build(),
-            ActivityTransition.Builder()
-                .setActivityType(DetectedActivity.IN_VEHICLE)
-                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
-                .build(),
-            ActivityTransition.Builder()
-                .setActivityType(DetectedActivity.STILL)
-                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
-                .build()
-        )
+    private val _currentActivity = MutableStateFlow<Int>(DetectedActivity.UNKNOWN)
+    val currentActivity: StateFlow<Int> = _currentActivity
 
-        val request = ActivityTransitionRequest(transitions)
-        val intent = Intent(ACTIVITY_TRANSITION_ACTION)
+    fun startTracking() {
+        Log.d(TAG, "Starting activity recognition tracking")
+        val intent = Intent(context, ActivityRecognitionReceiver::class.java).apply {
+            action = ACTION_PROCESS_ACTIVITY
+        }
+
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             0,
@@ -53,25 +40,34 @@ class ActivityRecognitionService @Inject constructor(
         )
 
         ActivityRecognition.getClient(context)
-            .requestActivityTransitionUpdates(request, pendingIntent)
+            .requestActivityUpdates(UPDATE_INTERVAL, pendingIntent)
             .addOnSuccessListener {
-                Log.d(TAG, "Activity recognition registered")
+                Log.d(TAG, "Successfully registered for updates")
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Error registering activity recognition: ${e.message}")
+                Log.e(TAG, "Failed to register for updates: ${e.message}")
             }
     }
 
-    fun handleActivityResult(result: ActivityRecognitionResult) {
-        val activity = result.mostProbableActivity
-        val activityStr = when (activity.type) {
-            DetectedActivity.STILL -> "STILL"
-            DetectedActivity.WALKING -> "WALKING"
-            DetectedActivity.RUNNING -> "RUNNING"
-            DetectedActivity.IN_VEHICLE -> "IN_VEHICLE"
-            else -> "UNKNOWN"
+    fun processActivityResult(result: ActivityRecognitionResult) {
+        result.probableActivities.maxByOrNull { it.confidence }?.let { mostProbableActivity ->
+            Log.d(TAG, """
+                Activity Detected: ${getActivityString(mostProbableActivity.type)}
+                Confidence: ${mostProbableActivity.confidence}%
+            """.trimIndent())
+            _currentActivity.value = mostProbableActivity.type
         }
-        Log.d(TAG, "Detected activity: $activityStr (${activity.confidence}%)")
-        _currentActivity.value = activityStr
+    }
+
+    private fun getActivityString(type: Int): String = when (type) {
+        DetectedActivity.STILL -> "Still"
+        DetectedActivity.WALKING -> "Walking"
+        DetectedActivity.RUNNING -> "Running"
+        DetectedActivity.IN_VEHICLE -> "In Vehicle"
+        DetectedActivity.ON_BICYCLE -> "On Bicycle"
+        DetectedActivity.ON_FOOT -> "On Foot"
+        DetectedActivity.TILTING -> "Tilting"
+        DetectedActivity.UNKNOWN -> "Unknown"
+        else -> "Unknown"
     }
 }
