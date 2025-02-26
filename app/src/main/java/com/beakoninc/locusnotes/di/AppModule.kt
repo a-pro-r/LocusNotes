@@ -14,6 +14,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
 
 @Module
@@ -73,6 +74,11 @@ object AppModule {
     @Singleton
     fun provideLocationService(@ApplicationContext context: Context): LocationService {
         return LocationService(context)
+    }
+    @Provides
+    @Singleton
+    fun provideActivityRecognitionManager(@ApplicationContext context: Context): ActivityRecognitionManager {
+        return ActivityRecognitionManager(context)
     }
 
 

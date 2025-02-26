@@ -21,8 +21,10 @@ import com.google.android.gms.location.DetectedActivity
 @HiltViewModel
 class NoteViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
-    val locationService: LocationService
+    val locationService: LocationService,
+    val activityRecognitionManager: ActivityRecognitionManager
 ) : ViewModel() {
+
 
     val notesFlow: StateFlow<List<Note>> = noteRepository.getAllNotesFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -43,8 +45,7 @@ class NoteViewModel @Inject constructor(
     fun getNote(id: String): Note? {
         return notesFlow.value.find { it.id == id }
     }
-    @Inject
-    lateinit var activityRecognitionManager: ActivityRecognitionManager
+
 
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
@@ -53,23 +54,9 @@ class NoteViewModel @Inject constructor(
         private const val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
         private const val TAG = "NoteViewModel"
     }
-    init {
+    fun checkProximityManually() {
         viewModelScope.launch {
-            activityRecognitionManager.currentActivity.collect { activity ->
-                Log.d(TAG, "Activity changed: ${getActivityString(activity)}")
-
-                // Check proximity when user is in motion
-                when (activity) {
-                    DetectedActivity.WALKING,
-                    DetectedActivity.RUNNING,
-                    DetectedActivity.ON_FOOT,
-                    DetectedActivity.ON_BICYCLE,
-                    DetectedActivity.IN_VEHICLE -> {
-                        Log.d(TAG, "User is moving, checking nearby notes")
-                        checkNoteProximity()
-                    }
-                }
-            }
+            checkNoteProximity()
         }
     }
     fun checkNoteProximity() {
