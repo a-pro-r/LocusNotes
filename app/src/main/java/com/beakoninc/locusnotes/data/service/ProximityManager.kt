@@ -78,7 +78,7 @@ class ProximityManager @Inject constructor(
 
                     val checkInterval = if (isMoving) {
                         Log.d(TAG, "User is moving, checking every 1 minute")
-                        60000L // 1 minute when moving (as requested)
+                        60000L // 1 minute when moving
                     } else {
                         Log.d(TAG, "User is stationary, checking every 5 minutes")
                         300000L // 5 minutes when stationary
