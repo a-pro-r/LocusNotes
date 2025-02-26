@@ -16,6 +16,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
+import com.beakoninc.locusnotes.data.service.LocalNotificationTracker
+import com.beakoninc.locusnotes.data.service.NotificationTracker
 import com.beakoninc.locusnotes.data.service.ProximityManager
 
 @Module
@@ -87,9 +89,22 @@ object AppModule {
         @ApplicationContext context: Context,
         locationService: LocationService,
         noteRepository: NoteRepository,
-        activityRecognitionManager: ActivityRecognitionManager
+        activityRecognitionManager: ActivityRecognitionManager,
+        notificationTracker: NotificationTracker  // Add this parameter
     ): ProximityManager {
-        return ProximityManager(context, locationService, noteRepository, activityRecognitionManager)
+        return ProximityManager(
+            context,
+            locationService,
+            noteRepository,
+            activityRecognitionManager,
+            notificationTracker
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationTracker(): NotificationTracker {
+        return LocalNotificationTracker()
     }
 
 }

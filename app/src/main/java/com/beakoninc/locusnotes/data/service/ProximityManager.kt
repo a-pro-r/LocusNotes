@@ -25,7 +25,8 @@ class ProximityManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationService: LocationService,
     private val noteRepository: NoteRepository,
-    private val activityRecognitionManager: ActivityRecognitionManager
+    private val activityRecognitionManager: ActivityRecognitionManager,
+    private val notificationTracker: NotificationTracker  // Add this parameter
 ) {
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
@@ -36,17 +37,23 @@ class ProximityManager @Inject constructor(
 
     private var lastNotificationTime = 0L
     private val NOTIFICATION_COOLDOWN = 60000L // 1 minute between notifications
-    private val notifiedNoteIds = mutableSetOf<String>()
 
     init {
-        // Start adaptive proximity checks
+        // Start proximity checks with activity recognition
         startHybridProximityChecks()
     }
 
-    // Replace the old periodic check method with this hybrid approach
     private fun startHybridProximityChecks() {
         serviceScope.launch {
-            // Collect activity changes to trigger immediate checks
+            // Check daily reset
+            launch {
+                while (isActive) {
+                    notificationTracker.checkAndResetCountsIfNeeded()
+                    delay(3600000) // Check once per hour
+                }
+            }
+
+            // Activity-based immediate checks
             launch {
                 activityRecognitionManager.currentActivity.collect { activity ->
                     when (activity) {
@@ -62,10 +69,9 @@ class ProximityManager @Inject constructor(
                 }
             }
 
-            // Also do periodic checks with adaptive interval
+            // Adaptive periodic checks based on activity
             launch {
                 while (isActive) {
-                    // Determine check interval based on activity
                     val currentActivity = activityRecognitionManager.currentActivity.value
                     val isMoving = when (currentActivity) {
                         DetectedActivity.WALKING,
@@ -80,8 +86,8 @@ class ProximityManager @Inject constructor(
                         Log.d(TAG, "User is moving, checking every 1 minute")
                         60000L // 1 minute when moving
                     } else {
-                        Log.d(TAG, "User is stationary, checking every 5 minutes")
-                        300000L // 5 minutes when stationary
+                        Log.d(TAG, "User is stationary, checking every 20 minutes")
+                        1200000L // 20 minutes when stationary
                     }
 
                     checkNearbyNotes()
@@ -94,6 +100,9 @@ class ProximityManager @Inject constructor(
     fun checkNearbyNotes() {
         serviceScope.launch {
             try {
+                // Check if counts need to be reset
+                notificationTracker.checkAndResetCountsIfNeeded()
+
                 val userLocation = locationService.getCurrentLocation()
                 if (userLocation == null) {
                     Log.e(TAG, "Cannot check proximity: Current location is null")
@@ -103,8 +112,8 @@ class ProximityManager @Inject constructor(
                 Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
 
                 val allNotes = noteRepository.getAllNotesFlow().first()
-                Log.d(TAG, "Total notes to check: ${allNotes.size}")
 
+                // Find all nearby notes
                 val nearbyNotesList = mutableListOf<Note>()
 
                 allNotes.forEach { note ->
@@ -117,36 +126,49 @@ class ProximityManager @Inject constructor(
                         )
                         val distance = results[0].toDouble()
 
-                        Log.d(TAG, "Note '${note.title}' distance: ${distance/1609.34} miles")
-
                         if (distance <= NEARBY_THRESHOLD_METERS) {
-                            Log.d(TAG, "Note '${note.title}' is nearby!")
+                            Log.d(TAG, "Note '${note.title}' is nearby! (${distance/1609.34} miles)")
                             nearbyNotesList.add(note)
                         }
-                    } else {
-                        Log.d(TAG, "Note '${note.title}' has no location data")
                     }
                 }
 
-                // Update nearby notes state
+                // Update state for debug screen and other UI
                 _nearbyNotes.value = nearbyNotesList
 
-                // Only show notification if we have notes AND
-                // either enough time has passed OR we have new notes
-                if (nearbyNotesList.isNotEmpty()) {
-                    val newNotes = nearbyNotesList.filter { it.id !in notifiedNoteIds }
-                    val shouldNotify = newNotes.isNotEmpty() ||
-                            (System.currentTimeMillis() - lastNotificationTime > NOTIFICATION_COOLDOWN)
+                // Filter notes that have reached notification limit
+                val notesUnderLimit = nearbyNotesList.filter { note ->
+                    val notificationCount = notificationTracker.getCount(note.id)
+                    val maxCount = notificationTracker.getMaxNotificationsPerNote()
+                    val underLimit = notificationCount < maxCount
 
-                    if (shouldNotify) {
-                        notifyNearbyNotes(nearbyNotesList)
-                        lastNotificationTime = System.currentTimeMillis()
-                        // Remember which notes we've notified about
-                        nearbyNotesList.forEach { notifiedNoteIds.add(it.id) }
+                    if (!underLimit) {
+                        Log.d(TAG, "Note '${note.title}' has reached notification limit (${notificationCount}/${maxCount})")
                     }
+
+                    underLimit
                 }
 
-                Log.d(TAG, "Found ${nearbyNotesList.size} notes within ${NEARBY_THRESHOLD_METERS/1609.34} miles")
+                // Show notification if we have eligible notes
+                if (notesUnderLimit.isNotEmpty()) {
+                    // Only notify if enough time has passed since last notification
+                    if (System.currentTimeMillis() - lastNotificationTime > NOTIFICATION_COOLDOWN) {
+                        notifyNearbyNotes(notesUnderLimit)
+
+                        // Increment counts for notified notes
+                        notesUnderLimit.forEach { note ->
+                            notificationTracker.incrementCount(note.id)
+                        }
+
+                        lastNotificationTime = System.currentTimeMillis()
+                    } else {
+                        Log.d(TAG, "Skipping notification due to cooldown period")
+                    }
+                } else if (nearbyNotesList.isNotEmpty()) {
+                    Log.d(TAG, "Notes found but all have reached daily notification limit")
+                } else {
+                    Log.d(TAG, "No nearby notes found")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error checking note proximity", e)
             }
