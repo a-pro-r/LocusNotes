@@ -16,6 +16,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
+import com.beakoninc.locusnotes.data.service.ProximityManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -80,6 +81,14 @@ object AppModule {
     fun provideActivityRecognitionManager(@ApplicationContext context: Context): ActivityRecognitionManager {
         return ActivityRecognitionManager(context)
     }
-
+    @Provides
+    @Singleton
+    fun provideProximityManager(
+        @ApplicationContext context: Context,
+        locationService: LocationService,
+        noteRepository: NoteRepository
+    ): ProximityManager {
+        return ProximityManager(context, locationService, noteRepository)
+    }
 
 }

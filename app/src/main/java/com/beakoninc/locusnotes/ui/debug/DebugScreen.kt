@@ -113,15 +113,10 @@ fun DebugScreen(
 
             // Manual Proximity Check
             Button(
-                onClick = {
-                    scope.launch {
-                        viewModel.checkNoteProximity()
-                    }
-                },
+                onClick = { viewModel.checkNoteProximity() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Check Nearby Notes Now")
-
             }
             Text(
                 "Last check: ${if (nearbyNotes.isEmpty()) "No nearby notes found" else "${nearbyNotes.size} notes nearby"}",

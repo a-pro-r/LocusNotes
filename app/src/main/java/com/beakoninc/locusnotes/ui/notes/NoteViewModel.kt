@@ -16,15 +16,16 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.util.Log
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
+import com.beakoninc.locusnotes.data.service.ProximityManager
 import com.google.android.gms.location.DetectedActivity
 
 @HiltViewModel
 class NoteViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     val locationService: LocationService,
-    val activityRecognitionManager: ActivityRecognitionManager
+    val activityRecognitionManager: ActivityRecognitionManager,
+    val proximityManager: ProximityManager
 ) : ViewModel() {
-
 
     val notesFlow: StateFlow<List<Note>> = noteRepository.getAllNotesFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -48,58 +49,15 @@ class NoteViewModel @Inject constructor(
 
 
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
-    val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
+    val nearbyNotes: StateFlow<List<Note>> = proximityManager.nearbyNotes
 
     companion object {
         private const val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
         private const val TAG = "NoteViewModel"
     }
-    fun checkProximityManually() {
-        viewModelScope.launch {
-            checkNoteProximity()
-        }
-    }
+
     fun checkNoteProximity() {
-        viewModelScope.launch {
-            try {
-                val userLocation = locationService.getCurrentLocation()
-                if (userLocation == null) {
-                    Log.e(TAG, "Cannot check proximity: Current location is null")
-                    return@launch
-                }
-
-                Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
-
-                val allNotes = notesFlow.value
-                Log.d(TAG, "Total notes to check: ${allNotes.size}")
-
-                val nearbyNotesList = mutableListOf<Note>()
-
-                allNotes.forEach { note ->
-                    if (note.latitude != null && note.longitude != null) {
-                        val distance = calculateDistance(
-                            userLocation.latitude, userLocation.longitude,
-                            note.latitude!!, note.longitude!!
-                        )
-
-                        Log.d(TAG, "Note '${note.title}' distance: ${distance/1609.34} miles")
-
-                        if (distance <= NEARBY_THRESHOLD_METERS) {
-                            Log.d(TAG, "Note '${note.title}' is nearby!")
-                            nearbyNotesList.add(note)
-                        }
-                    } else {
-                        Log.d(TAG, "Note '${note.title}' has no location data")
-                    }
-                }
-
-                _nearbyNotes.value = nearbyNotesList
-
-                Log.d(TAG, "Found ${nearbyNotesList.size} notes within ${NEARBY_THRESHOLD_METERS/1609.34} miles")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error checking note proximity", e)
-            }
-        }
+        proximityManager.checkNearbyNotes()
     }
 
     // Fix and enhance distance calculation
