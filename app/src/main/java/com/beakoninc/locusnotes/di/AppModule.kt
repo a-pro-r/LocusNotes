@@ -89,10 +89,18 @@ object AppModule {
         @ApplicationContext context: Context,
         locationService: LocationService,
         noteRepository: NoteRepository,
-        activityRecognitionManager: ActivityRecognitionManager
+        activityRecognitionManager: ActivityRecognitionManager,
+        notificationTracker: NotificationTracker  // Add this parameter
     ): ProximityManager {
-        return ProximityManager(context, locationService, noteRepository, activityRecognitionManager)
+        return ProximityManager(
+            context,
+            locationService,
+            noteRepository,
+            activityRecognitionManager,
+            notificationTracker
+        )
     }
+
     @Provides
     @Singleton
     fun provideNotificationTracker(): NotificationTracker {
