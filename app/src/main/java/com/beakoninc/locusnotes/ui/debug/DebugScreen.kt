@@ -15,6 +15,7 @@ import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.ui.notes.NoteViewModel
 import com.google.android.gms.location.DetectedActivity
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.Color
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,7 +23,8 @@ fun DebugScreen(
     viewModel: NoteViewModel = hiltViewModel(),
     navController: NavController
 ) {
-    val currentActivity by viewModel.activityRecognitionManager.currentActivity.collectAsState(initial = DetectedActivity.UNKNOWN)
+    val currentActivity by viewModel.activityRecognitionManager.currentActivity
+        .collectAsState(initial = DetectedActivity.UNKNOWN)
     val nearbyNotes by viewModel.nearbyNotes.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -30,6 +32,7 @@ fun DebugScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Activity Recognition Debug") },
+
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(
@@ -57,6 +60,12 @@ fun DebugScreen(
                     Text(
                         getActivityString(currentActivity),
                         style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        "Activity Updates: ${if (currentActivity != DetectedActivity.UNKNOWN) "Working" else "Not working"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (currentActivity != DetectedActivity.UNKNOWN)
+                            Color.Green else Color.Red
                     )
                 }
             }
@@ -112,7 +121,13 @@ fun DebugScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Check Nearby Notes Now")
+
             }
+            Text(
+                "Last check: ${if (nearbyNotes.isEmpty()) "No nearby notes found" else "${nearbyNotes.size} notes nearby"}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp)
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 

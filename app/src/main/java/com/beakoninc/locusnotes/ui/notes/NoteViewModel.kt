@@ -64,48 +64,51 @@ class NoteViewModel @Inject constructor(
             try {
                 val userLocation = locationService.getCurrentLocation()
                 if (userLocation == null) {
-                    Log.d(TAG, "Cannot check proximity: Current location is null")
+                    Log.e(TAG, "Cannot check proximity: Current location is null")
                     return@launch
                 }
 
                 Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
 
                 val allNotes = notesFlow.value
-                val nearbyNotesList = allNotes.filter { note ->
-                    note.latitude != null && note.longitude != null &&
-                            calculateDistance(
-                                userLocation.latitude, userLocation.longitude,
-                                note.latitude!!, note.longitude!!
-                            ) <= NEARBY_THRESHOLD_METERS
+                Log.d(TAG, "Total notes to check: ${allNotes.size}")
+
+                val nearbyNotesList = mutableListOf<Note>()
+
+                allNotes.forEach { note ->
+                    if (note.latitude != null && note.longitude != null) {
+                        val distance = calculateDistance(
+                            userLocation.latitude, userLocation.longitude,
+                            note.latitude!!, note.longitude!!
+                        )
+
+                        Log.d(TAG, "Note '${note.title}' distance: ${distance/1609.34} miles")
+
+                        if (distance <= NEARBY_THRESHOLD_METERS) {
+                            Log.d(TAG, "Note '${note.title}' is nearby!")
+                            nearbyNotesList.add(note)
+                        }
+                    } else {
+                        Log.d(TAG, "Note '${note.title}' has no location data")
+                    }
                 }
 
                 _nearbyNotes.value = nearbyNotesList
 
-                Log.d(TAG, "Found ${nearbyNotesList.size} notes within ${NEARBY_THRESHOLD_METERS / 1609.34} miles")
-                nearbyNotesList.forEach { note ->
-                    Log.d(TAG, "Nearby note: ${note.title}")
-                }
+                Log.d(TAG, "Found ${nearbyNotesList.size} notes within ${NEARBY_THRESHOLD_METERS/1609.34} miles")
             } catch (e: Exception) {
                 Log.e(TAG, "Error checking note proximity", e)
             }
         }
     }
 
+    // Fix and enhance distance calculation
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val earthRadius = 6371e3 // meters
-        val lat1Rad = Math.toRadians(lat1)
-        val lat2Rad = Math.toRadians(lat2)
-        val latDiff = Math.toRadians(lat2 - lat1)
-        val lonDiff = Math.toRadians(lon2 - lon1)
-
-        val a = Math.sin(latDiff / 2) * Math.sin(latDiff / 2) +
-                Math.cos(lat1Rad) * Math.cos(lat2Rad) *
-                Math.sin(lonDiff / 2) * Math.sin(lonDiff / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-        return earthRadius * c
+        // Direct calculation using Android's built-in distance formula for more accuracy
+        val results = FloatArray(1)
+        android.location.Location.distanceBetween(lat1, lon1, lat2, lon2, results)
+        return results[0].toDouble()
     }
-
 
     // Update the addNote function in NoteViewModel
     fun addNote(

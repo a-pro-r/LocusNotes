@@ -14,6 +14,8 @@ import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
 import com.google.android.gms.location.DetectedActivity
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.Priority
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -21,6 +23,9 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class ProximityService : Service() {
+    private var lastNotificationTime = 0L
+    private val NOTIFICATION_COOLDOWN = 300000L // 5 minutes between notifications
+    private val lastCheckedNotes = mutableSetOf<String>() // Track previously notified notes
     @Inject
     lateinit var activityRecognitionManager: ActivityRecognitionManager
 
@@ -63,10 +68,18 @@ class ProximityService : Service() {
         }
     }
 
+
     private fun checkNearbyNotes() {
         serviceScope.launch {
             try {
-                val currentLocation = locationService.getCurrentLocation()
+                // Use high accuracy location request
+                val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+                    .setWaitForAccurateLocation(true)
+                    .setMinUpdateIntervalMillis(5000)
+                    .build()
+
+                // Get location with high accuracy
+                val currentLocation = locationService.getCurrentLocationHighAccuracy(locationRequest)
                 if (currentLocation == null) {
                     Log.d(TAG, "Cannot check nearby notes: location is null")
                     return@launch
@@ -78,17 +91,38 @@ class ProximityService : Service() {
                     noteRepository.getAllNotesFlow().first()
                 }
 
+                // Use the Android Location.distanceBetween method for more accuracy
                 val nearbyNotes = allNotes.filter { note ->
-                    note.latitude != null && note.longitude != null &&
-                            calculateDistance(
-                                currentLocation.latitude, currentLocation.longitude,
-                                note.latitude!!, note.longitude!!
-                            ) <= NEARBY_THRESHOLD_METERS
+                    if (note.latitude != null && note.longitude != null) {
+                        val results = FloatArray(1)
+                        android.location.Location.distanceBetween(
+                            currentLocation.latitude, currentLocation.longitude,
+                            note.latitude!!, note.longitude!!,
+                            results
+                        )
+                        val distance = results[0].toDouble()
+
+                        Log.d(TAG, "Note '${note.title}' is ${distance/1609.34} miles away")
+                        distance <= NEARBY_THRESHOLD_METERS
+                    } else false
                 }
 
-                if (nearbyNotes.isNotEmpty()) {
-                    Log.d(TAG, "Found ${nearbyNotes.size} nearby notes")
-                    notifyNearbyNotes(nearbyNotes)
+                // Get only new notes that weren't recently notified
+                val newNearbyNotes = nearbyNotes.filter { note ->
+                    !lastCheckedNotes.contains(note.id)
+                }
+
+                if (newNearbyNotes.isNotEmpty() &&
+                    System.currentTimeMillis() - lastNotificationTime > NOTIFICATION_COOLDOWN) {
+                    Log.d(TAG, "Found ${newNearbyNotes.size} NEW nearby notes")
+                    notifyNearbyNotes(newNearbyNotes)
+                    lastNotificationTime = System.currentTimeMillis()
+
+                    // Update the set of recently notified notes
+                    lastCheckedNotes.clear()
+                    nearbyNotes.forEach { note -> lastCheckedNotes.add(note.id) }
+                } else if (nearbyNotes.isNotEmpty()) {
+                    Log.d(TAG, "Found ${nearbyNotes.size} nearby notes, but recently notified or on cooldown")
                 } else {
                     Log.d(TAG, "No nearby notes found")
                 }
