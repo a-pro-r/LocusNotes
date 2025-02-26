@@ -86,9 +86,10 @@ object AppModule {
     fun provideProximityManager(
         @ApplicationContext context: Context,
         locationService: LocationService,
-        noteRepository: NoteRepository
+        noteRepository: NoteRepository,
+        activityRecognitionManager: ActivityRecognitionManager
     ): ProximityManager {
-        return ProximityManager(context, locationService, noteRepository)
+        return ProximityManager(context, locationService, noteRepository, activityRecognitionManager)
     }
 
 }

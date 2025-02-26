@@ -9,21 +9,14 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.beakoninc.locusnotes.MainActivity
 import com.beakoninc.locusnotes.R
-import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
-import com.google.android.gms.location.DetectedActivity
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.*
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class ProximityService : Service() {
     @Inject
-    lateinit var activityRecognitionManager: ActivityRecognitionManager
+    lateinit var proximityManager: ProximityManager
 
-    @Inject
-    lateinit var proximityManager: ProximityManager  // New injection
-
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private val TAG = "ProximityService"
 
     override fun onCreate() {
@@ -32,28 +25,7 @@ class ProximityService : Service() {
         startForeground(NOTIFICATION_ID, createServiceNotification())
         Log.d(TAG, "Proximity service created")
 
-        // Monitor activity changes
-        monitorUserActivity()
-    }
-
-    private fun monitorUserActivity() {
-        serviceScope.launch {
-            activityRecognitionManager.currentActivity.collect { activity ->
-                Log.d(TAG, "Activity changed in service: ${getActivityString(activity)}")
-
-                // Run an additional check on activity change
-                when (activity) {
-                    DetectedActivity.WALKING,
-                    DetectedActivity.RUNNING,
-                    DetectedActivity.ON_FOOT,
-                    DetectedActivity.ON_BICYCLE,
-                    DetectedActivity.IN_VEHICLE -> {
-                        Log.d(TAG, "Movement detected, checking for nearby notes")
-                        proximityManager.checkNearbyNotes()
-                    }
-                }
-            }
-        }
+        // ProximityManager now handles all monitoring
     }
 
     private fun createServiceNotification(): Notification {
@@ -86,25 +58,13 @@ class ProximityService : Service() {
         }
     }
 
-    private fun getActivityString(type: Int): String = when (type) {
-        DetectedActivity.STILL -> "Still"
-        DetectedActivity.WALKING -> "Walking"
-        DetectedActivity.RUNNING -> "Running"
-        DetectedActivity.IN_VEHICLE -> "In Vehicle"
-        DetectedActivity.ON_BICYCLE -> "On Bicycle"
-        DetectedActivity.ON_FOOT -> "On Foot"
-        DetectedActivity.TILTING -> "Tilting"
-        DetectedActivity.UNKNOWN -> "Unknown"
-        else -> "Unknown"
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        serviceScope.cancel()
+        proximityManager.onDestroy()
         Log.d(TAG, "Proximity service destroyed")
     }
 

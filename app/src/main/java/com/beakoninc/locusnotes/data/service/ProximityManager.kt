@@ -1,28 +1,31 @@
 package com.beakoninc.locusnotes.data.service
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.beakoninc.locusnotes.R
+import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
+import com.google.android.gms.location.DetectedActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 import javax.inject.Singleton
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.content.ContextCompat
 
 @Singleton
 class ProximityManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationService: LocationService,
-    private val noteRepository: NoteRepository
+    private val noteRepository: NoteRepository,
+    private val activityRecognitionManager: ActivityRecognitionManager
 ) {
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
@@ -36,16 +39,54 @@ class ProximityManager @Inject constructor(
     private val notifiedNoteIds = mutableSetOf<String>()
 
     init {
-        // Start polling for nearby notes
-        startPeriodicProximityChecks()
+        // Start adaptive proximity checks
+        startHybridProximityChecks()
     }
 
-    private fun startPeriodicProximityChecks() {
+    // Replace the old periodic check method with this hybrid approach
+    private fun startHybridProximityChecks() {
         serviceScope.launch {
-            while (isActive) {
-                Log.d(TAG, "Running periodic proximity check")
-                checkNearbyNotes()
-                delay(30000) // Check every 30 seconds
+            // Collect activity changes to trigger immediate checks
+            launch {
+                activityRecognitionManager.currentActivity.collect { activity ->
+                    when (activity) {
+                        DetectedActivity.WALKING,
+                        DetectedActivity.RUNNING,
+                        DetectedActivity.ON_FOOT,
+                        DetectedActivity.ON_BICYCLE,
+                        DetectedActivity.IN_VEHICLE -> {
+                            Log.d(TAG, "Movement detected (${getActivityString(activity)}), checking for nearby notes")
+                            checkNearbyNotes()
+                        }
+                    }
+                }
+            }
+
+            // Also do periodic checks with adaptive interval
+            launch {
+                while (isActive) {
+                    // Determine check interval based on activity
+                    val currentActivity = activityRecognitionManager.currentActivity.value
+                    val isMoving = when (currentActivity) {
+                        DetectedActivity.WALKING,
+                        DetectedActivity.RUNNING,
+                        DetectedActivity.ON_FOOT,
+                        DetectedActivity.ON_BICYCLE,
+                        DetectedActivity.IN_VEHICLE -> true
+                        else -> false
+                    }
+
+                    val checkInterval = if (isMoving) {
+                        Log.d(TAG, "User is moving, checking every 1 minute")
+                        60000L // 1 minute when moving (as requested)
+                    } else {
+                        Log.d(TAG, "User is stationary, checking every 5 minutes")
+                        300000L // 5 minutes when stationary
+                    }
+
+                    checkNearbyNotes()
+                    delay(checkInterval)
+                }
             }
         }
     }
@@ -148,6 +189,18 @@ class ProximityManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error showing notification", e)
         }
+    }
+
+    private fun getActivityString(type: Int): String = when (type) {
+        DetectedActivity.STILL -> "Still"
+        DetectedActivity.WALKING -> "Walking"
+        DetectedActivity.RUNNING -> "Running"
+        DetectedActivity.IN_VEHICLE -> "In Vehicle"
+        DetectedActivity.ON_BICYCLE -> "On Bicycle"
+        DetectedActivity.ON_FOOT -> "On Foot"
+        DetectedActivity.TILTING -> "Tilting"
+        DetectedActivity.UNKNOWN -> "Unknown"
+        else -> "Unknown"
     }
 
     fun onDestroy() {
