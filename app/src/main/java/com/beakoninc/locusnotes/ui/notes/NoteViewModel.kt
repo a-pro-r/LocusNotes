@@ -14,12 +14,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
+import android.util.Log
+import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
+import com.beakoninc.locusnotes.data.service.ProximityManager
+import com.google.android.gms.location.DetectedActivity
 
 @HiltViewModel
 class NoteViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
-    val locationService: LocationService
+    val locationService: LocationService,
+    val activityRecognitionManager: ActivityRecognitionManager,
+    val proximityManager: ProximityManager
 ) : ViewModel() {
 
     val notesFlow: StateFlow<List<Note>> = noteRepository.getAllNotesFlow()
@@ -42,6 +47,26 @@ class NoteViewModel @Inject constructor(
         return notesFlow.value.find { it.id == id }
     }
 
+
+    private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
+    val nearbyNotes: StateFlow<List<Note>> = proximityManager.nearbyNotes
+
+    companion object {
+        private const val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
+        private const val TAG = "NoteViewModel"
+    }
+
+    fun checkNoteProximity() {
+        proximityManager.checkNearbyNotes()
+    }
+
+    // Fix and enhance distance calculation
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        // Direct calculation using Android's built-in distance formula for more accuracy
+        val results = FloatArray(1)
+        android.location.Location.distanceBetween(lat1, lon1, lat2, lon2, results)
+        return results[0].toDouble()
+    }
 
     // Update the addNote function in NoteViewModel
     fun addNote(
@@ -112,6 +137,17 @@ class NoteViewModel @Inject constructor(
     fun clearSearch() {
         _searchQuery.value = ""
         _searchResults.value = emptyList()
+    }
+    private fun getActivityString(type: Int): String = when (type) {
+        DetectedActivity.STILL -> "Still"
+        DetectedActivity.WALKING -> "Walking"
+        DetectedActivity.RUNNING -> "Running"
+        DetectedActivity.IN_VEHICLE -> "In Vehicle"
+        DetectedActivity.ON_BICYCLE -> "On Bicycle"
+        DetectedActivity.ON_FOOT -> "On Foot"
+        DetectedActivity.TILTING -> "Tilting"
+        DetectedActivity.UNKNOWN -> "Unknown"
+        else -> "Unknown"
     }
 
 }

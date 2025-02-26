@@ -1,7 +1,10 @@
 package com.beakoninc.locusnotes.data.location
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -21,6 +24,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.beakoninc.locusnotes.data.model.Location
+import com.google.android.gms.location.LocationRequest
 import kotlin.coroutines.resume
 
 @Singleton
@@ -209,5 +213,41 @@ class LocationService @Inject constructor(
         val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
 
         return earthRadius * c
+    }
+
+    suspend fun getCurrentLocationHighAccuracy(request: LocationRequest): Location? = suspendCancellableCoroutine { continuation ->
+        try {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+                Log.e("LocationService", "No fine location permission")
+                continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                null
+            ).addOnSuccessListener { location ->
+                if (location != null) {
+                    Log.d("LocationService", "Got high accuracy location: ${location.latitude}, ${location.longitude}")
+                    continuation.resume(
+                        Location(
+                            name = "Current Location",
+                            latitude = location.latitude,
+                            longitude = location.longitude,
+                        )
+                    )
+                } else {
+                    Log.e("LocationService", "Location is null")
+                    continuation.resume(null)
+                }
+            }.addOnFailureListener { exception ->
+                Log.e("LocationService", "Error getting location", exception)
+                continuation.resume(null)
+            }
+        } catch (e: SecurityException) {
+            Log.e("LocationService", "Security exception getting location", e)
+            continuation.resume(null)
+        }
     }
 }

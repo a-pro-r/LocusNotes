@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import com.beakoninc.locusnotes.ui.theme.LocusNotesTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Build
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -90,6 +91,15 @@ fun NavigationDrawerContent(navController: NavController, onItemClick: () -> Uni
             selected = navController.currentDestination?.route == "map",
             onClick = {
                 navController.navigate("map")
+                onItemClick()
+            }
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Filled.Build, contentDescription = "Debug") },
+            label = { Text("Debug") },
+            selected = navController.currentDestination?.route == "debug",
+            onClick = {
+                navController.navigate("debug")
                 onItemClick()
             }
         )
