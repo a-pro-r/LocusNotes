@@ -70,4 +70,8 @@ class ActivityRecognitionManager @Inject constructor(
         DetectedActivity.UNKNOWN -> "Unknown"
         else -> "Unknown"
     }
+    fun simulateActivity(activityType: Int) {
+        Log.d(TAG, "Simulating activity: ${getActivityString(activityType)}")
+        _currentActivity.value = activityType
+    }
 }

@@ -5,6 +5,7 @@ import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import dagger.hilt.android.HiltAndroidApp
 import org.osmdroid.config.Configuration
 import javax.inject.Inject
+import com.beakoninc.locusnotes.data.service.ProximityService
 
 @HiltAndroidApp
 class LocusNotesApplication : Application() {
@@ -19,5 +20,8 @@ class LocusNotesApplication : Application() {
 
         // Start activity recognition
         activityRecognitionManager.startTracking()
+
+        // Start proximity service
+        ProximityService.startService(this)
     }
 }

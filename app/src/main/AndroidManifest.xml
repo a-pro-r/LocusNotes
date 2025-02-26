@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".LocusNotesApplication"
         android:allowBackup="true"
@@ -41,6 +45,11 @@
                 <action android:name="com.beakoninc.locusnotes.ACTIVITY_TRANSITION_ACTION" />
             </intent-filter>
         </receiver>
+        <service
+            android:name=".data.service.ProximityService"
+            android:enabled="true"
+            android:foregroundServiceType="location"
+            android:exported="false" />
 
     </application>
 

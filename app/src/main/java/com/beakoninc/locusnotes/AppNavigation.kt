@@ -7,7 +7,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.beakoninc.locusnotes.ui.notes.NoteList
-
+import com.beakoninc.locusnotes.ui.debug.DebugScreen
 
 @Composable
 fun AppNavigation(
@@ -25,6 +25,9 @@ fun AppNavigation(
 
         composable("map") {
             MapScreen(navController)
+        }
+        composable("debug") {
+            DebugScreen(navController = navController)
         }
         // Add more destinations here as we develop them
     }

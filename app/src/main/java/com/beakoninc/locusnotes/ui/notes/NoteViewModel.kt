@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
+import android.util.Log
+import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
+import com.google.android.gms.location.DetectedActivity
 
 @HiltViewModel
 class NoteViewModel @Inject constructor(
@@ -40,6 +42,81 @@ class NoteViewModel @Inject constructor(
 
     fun getNote(id: String): Note? {
         return notesFlow.value.find { it.id == id }
+    }
+    @Inject
+    lateinit var activityRecognitionManager: ActivityRecognitionManager
+
+    private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
+    val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
+
+    companion object {
+        private const val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
+        private const val TAG = "NoteViewModel"
+    }
+    init {
+        viewModelScope.launch {
+            activityRecognitionManager.currentActivity.collect { activity ->
+                Log.d(TAG, "Activity changed: ${getActivityString(activity)}")
+
+                // Check proximity when user is in motion
+                when (activity) {
+                    DetectedActivity.WALKING,
+                    DetectedActivity.RUNNING,
+                    DetectedActivity.ON_FOOT,
+                    DetectedActivity.ON_BICYCLE,
+                    DetectedActivity.IN_VEHICLE -> {
+                        Log.d(TAG, "User is moving, checking nearby notes")
+                        checkNoteProximity()
+                    }
+                }
+            }
+        }
+    }
+    fun checkNoteProximity() {
+        viewModelScope.launch {
+            try {
+                val userLocation = locationService.getCurrentLocation()
+                if (userLocation == null) {
+                    Log.d(TAG, "Cannot check proximity: Current location is null")
+                    return@launch
+                }
+
+                Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
+
+                val allNotes = notesFlow.value
+                val nearbyNotesList = allNotes.filter { note ->
+                    note.latitude != null && note.longitude != null &&
+                            calculateDistance(
+                                userLocation.latitude, userLocation.longitude,
+                                note.latitude!!, note.longitude!!
+                            ) <= NEARBY_THRESHOLD_METERS
+                }
+
+                _nearbyNotes.value = nearbyNotesList
+
+                Log.d(TAG, "Found ${nearbyNotesList.size} notes within ${NEARBY_THRESHOLD_METERS / 1609.34} miles")
+                nearbyNotesList.forEach { note ->
+                    Log.d(TAG, "Nearby note: ${note.title}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking note proximity", e)
+            }
+        }
+    }
+
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val earthRadius = 6371e3 // meters
+        val lat1Rad = Math.toRadians(lat1)
+        val lat2Rad = Math.toRadians(lat2)
+        val latDiff = Math.toRadians(lat2 - lat1)
+        val lonDiff = Math.toRadians(lon2 - lon1)
+
+        val a = Math.sin(latDiff / 2) * Math.sin(latDiff / 2) +
+                Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                Math.sin(lonDiff / 2) * Math.sin(lonDiff / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+        return earthRadius * c
     }
 
 
@@ -112,6 +189,17 @@ class NoteViewModel @Inject constructor(
     fun clearSearch() {
         _searchQuery.value = ""
         _searchResults.value = emptyList()
+    }
+    private fun getActivityString(type: Int): String = when (type) {
+        DetectedActivity.STILL -> "Still"
+        DetectedActivity.WALKING -> "Walking"
+        DetectedActivity.RUNNING -> "Running"
+        DetectedActivity.IN_VEHICLE -> "In Vehicle"
+        DetectedActivity.ON_BICYCLE -> "On Bicycle"
+        DetectedActivity.ON_FOOT -> "On Foot"
+        DetectedActivity.TILTING -> "Tilting"
+        DetectedActivity.UNKNOWN -> "Unknown"
+        else -> "Unknown"
     }
 
 }
