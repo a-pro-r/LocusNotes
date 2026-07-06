@@ -1,6 +1,5 @@
 package com.beakoninc.locusnotes.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -12,32 +11,49 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = TealPrimaryDark,
+    onPrimary = TealOnPrimaryDark,
+    primaryContainer = TealPrimaryContainerDark,
+    onPrimaryContainer = TealOnPrimaryContainerDark,
+    secondary = SlateSecondaryDark,
+    onSecondary = SlateOnSecondaryDark,
+    secondaryContainer = SlateSecondaryContainerDark,
+    onSecondaryContainer = SlateOnSecondaryContainerDark,
+    background = DarkBackground,
+    onBackground = DarkOnBackground,
+    surface = DarkBackground,
+    onSurface = DarkOnBackground,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline,
+    outlineVariant = DarkOutlineVariant
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    primary = TealPrimary,
+    onPrimary = TealOnPrimary,
+    primaryContainer = TealPrimaryContainer,
+    onPrimaryContainer = TealOnPrimaryContainer,
+    secondary = SlateSecondary,
+    onSecondary = SlateOnSecondary,
+    secondaryContainer = SlateSecondaryContainer,
+    onSecondaryContainer = SlateOnSecondaryContainer,
+    background = LightBackground,
+    onBackground = LightOnBackground,
+    surface = LightBackground,
+    onSurface = LightOnBackground,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant
 )
 
 @Composable
 fun LocusNotesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // Off by default so the app keeps its own minimal teal identity
+    // instead of the wallpaper-derived palette on Android 12+.
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

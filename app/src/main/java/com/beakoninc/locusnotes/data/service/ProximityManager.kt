@@ -1,13 +1,16 @@
 package com.beakoninc.locusnotes.data.service
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.beakoninc.locusnotes.MainActivity
 import com.beakoninc.locusnotes.R
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
@@ -201,11 +204,28 @@ class ProximityManager @Inject constructor(
 
             Log.d(TAG, "Preparing notification: $title - $content")
 
+            // Tapping the notification opens the app; with a single note it deep-links
+            // straight to that note's details (MainActivity reads EXTRA_NOTE_ID).
+            val tapIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                if (notes.size == 1) putExtra(MainActivity.EXTRA_NOTE_ID, notes.first().id)
+            }
+            val contentIntent = PendingIntent.getActivity(
+                context,
+                0,
+                tapIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
             val notification = NotificationCompat.Builder(context, ProximityService.CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(true)
                 .build()
 
             // Check for notification permission

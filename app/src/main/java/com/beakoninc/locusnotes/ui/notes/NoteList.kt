@@ -12,14 +12,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import android.text.format.DateUtils
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -44,9 +46,12 @@ import com.beakoninc.locusnotes.data.location.LocationService
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
-             navController: NavController
+             navController: NavController,
+             noteIdToOpen: String? = null,
+             onNoteOpened: () -> Unit = {}
 ) {
     val notes by viewModel.notesFlow.collectAsState()
+    val nearbyNotes by viewModel.nearbyNotes.collectAsState()
     var selectedNoteId by remember { mutableStateOf<String?>(null) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -54,6 +59,14 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
 
     val searchResults by viewModel.searchResults.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+
+    // Deep link from a tapped proximity notification
+    LaunchedEffect(noteIdToOpen) {
+        if (noteIdToOpen != null) {
+            selectedNoteId = noteIdToOpen
+            onNoteOpened()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -63,21 +76,36 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
                 onSearchClear = { viewModel.clearSearch() }
             )
 
-            Text(
-                "Your Notes",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(16.dp)
-            )
-
             if (searchQuery.isNotEmpty()) {
                 NoteSearchResults(searchResults, searchQuery, onNoteClick = { selectedNoteId = it.id })
             } else if (notes.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No notes yet. Add your first note!")
-                }
+                EmptyNotesMessage()
             } else {
-                LazyColumn {
-                    items(notes) { note ->
+                LazyColumn(
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp) // keep last card clear of the FAB
+                ) {
+                    if (nearbyNotes.isNotEmpty()) {
+                        item { SectionHeader("Nearby") }
+                        items(nearbyNotes, key = { "nearby-${it.id}" }) { note ->
+                            NoteListItem(
+                                note = note,
+                                nearby = true,
+                                onShowDetails = { selectedNoteId = it.id },
+                                onEdit = {
+                                    selectedNoteId = note.id
+                                    showEditDialog = true
+                                },
+                                onDelete = {
+                                    viewModel.deleteNote(note)
+                                    if (selectedNoteId == note.id) {
+                                        selectedNoteId = null
+                                    }
+                                }
+                            )
+                        }
+                        item { SectionHeader("All notes") }
+                    }
+                    items(notes, key = { it.id }) { note ->
                         NoteListItem(
                             note = note,
                             onShowDetails = { selectedNoteId = it.id },
@@ -161,14 +189,63 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     }
 }
 @Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun EmptyNotesMessage() {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.LocationOn,
+            contentDescription = null,
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("No notes yet", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Tap + to add a note tied to a place",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 fun NoteSearchResults(
     searchResults: List<Note>,
     searchQuery: String,
     onNoteClick: (Note) -> Unit
 ) {
-    LazyColumn {
-        items(searchResults) { note ->
-            NoteItemWithHighlight(note, searchQuery, onNoteClick)
+    if (searchResults.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "No notes match \"$searchQuery\"",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    } else {
+        LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp)) {
+            items(searchResults, key = { it.id }) { note ->
+                NoteItemWithHighlight(note, searchQuery, onNoteClick)
+            }
         }
     }
 }
@@ -181,7 +258,7 @@ fun NoteItemWithHighlight(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onClick(note) }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -202,6 +279,11 @@ fun NoteItemWithHighlight(
 
 @Composable
 fun highlightText(text: String, query: String): AnnotatedString {
+    // Theme-aware highlight (yellow is unreadable in dark mode)
+    val highlightStyle = SpanStyle(
+        background = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.onPrimaryContainer
+    )
     return buildAnnotatedString {
         val lowercaseText = text.lowercase()
         val lowercaseQuery = query.lowercase()
@@ -213,7 +295,7 @@ fun highlightText(text: String, query: String): AnnotatedString {
                 break
             }
             append(text.substring(startIndex, index))
-            withStyle(style = SpanStyle(background = Color.Yellow)) {
+            withStyle(style = highlightStyle) {
                 append(text.substring(index, index + query.length))
             }
             startIndex = index + query.length
@@ -227,15 +309,24 @@ fun NoteListItem(
     note: Note,
     onShowDetails: (Note) -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    nearby: Boolean = false
 ) {
     var showDropdown by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
     Card(
+        colors = if (nearby) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        } else {
+            CardDefaults.cardColors()
+        },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onShowDetails(note) },
@@ -318,9 +409,46 @@ fun NoteListItem(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (note.locationName != null) {
+                    Icon(
+                        Icons.Default.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = note.locationName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = relativeTime(note.updatedAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
+
+private fun relativeTime(timestamp: Long): String =
+    DateUtils.getRelativeTimeSpanString(
+        timestamp,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS
+    ).toString()
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -453,14 +581,17 @@ fun AddNoteDialog(
                 TextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") }
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 TextField(
                     value = content,
                     onValueChange = { content = it },
                     label = { Text("Content") },
-                    modifier = Modifier.height(150.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 TagInput(
@@ -488,7 +619,7 @@ fun AddNoteDialog(
             }
         },
         dismissButton = {
-            Button(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         }
@@ -569,7 +700,7 @@ fun EditNoteDialog(
             }
         },
         dismissButton = {
-            Button(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         }

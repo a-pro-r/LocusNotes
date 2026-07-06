@@ -20,6 +20,10 @@ import com.beakoninc.locusnotes.data.location.LocationService
 import com.beakoninc.locusnotes.data.model.Location
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Divider
@@ -27,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.google.accompanist.permissions.isGranted
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class, FlowPreview::class)
 @Composable
 fun LocationAutocomplete(
     initialLocation: Location? = null,
@@ -61,6 +65,30 @@ fun LocationAutocomplete(
         }
     }
 
+    // Debounced search: one geocoding request per typing pause instead of per keystroke.
+    // collectLatest cancels an in-flight search when a newer query arrives.
+    LaunchedEffect(Unit) {
+        snapshotFlow { query }
+            .debounce(300)
+            .distinctUntilChanged()
+            .collectLatest { currentQuery ->
+                if (!showSuggestions || currentQuery.length < 2) {
+                    isSearching = false
+                    return@collectLatest
+                }
+                try {
+                    locationService.searchLocations(currentQuery, currentLocation)
+                        .collect { results ->
+                            locations = results
+                            isSearching = false
+                        }
+                } catch (e: Exception) {
+                    Log.e("LocationAutoComplete", "Error searching", e)
+                    isSearching = false
+                }
+            }
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = query,
@@ -72,19 +100,7 @@ fun LocationAutocomplete(
                     locations = emptyList()
                 } else {
                     showSuggestions = true
-                    coroutineScope.launch {
-                        isSearching = true
-                        try {
-                            locationService.searchLocations(newQuery, currentLocation)
-                                .collect { results ->
-                                    locations = results
-                                    isSearching = false
-                                }
-                        } catch (e: Exception) {
-                            Log.e("LocationAutoComplete", "Error searching", e)
-                            isSearching = false
-                        }
-                    }
+                    isSearching = true
                 }
             },
             modifier = Modifier.fillMaxWidth(),
