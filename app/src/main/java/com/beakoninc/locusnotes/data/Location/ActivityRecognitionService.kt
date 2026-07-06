@@ -112,6 +112,14 @@ class ActivityRecognitionManager @Inject constructor(
         }
     }
 
+    // Handle activity transition results (registered via requestActivityTransitionUpdates)
+    fun processTransitionResult(result: com.google.android.gms.location.ActivityTransitionResult) {
+        result.transitionEvents.lastOrNull()?.let { event ->
+            Log.d(TAG, "Activity transition: ${getActivityString(event.activityType)}")
+            _currentActivity.value = event.activityType
+        }
+    }
+
     private fun getActivityString(type: Int): String = when (type) {
         DetectedActivity.STILL -> "Still"
         DetectedActivity.WALKING -> "Walking"

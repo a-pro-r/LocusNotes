@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.google.android.gms.location.ActivityRecognitionResult
+import com.google.android.gms.location.ActivityTransitionResult
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -19,6 +20,13 @@ class ActivityRecognitionReceiver : BroadcastReceiver() {
                 val result = ActivityRecognitionResult.extractResult(intent)
                 result?.let {
                     activityManager.processActivityResult(it)
+                }
+            }
+            // Transition updates are delivered separately from activity updates
+            if (ActivityTransitionResult.hasResult(intent)) {
+                val result = ActivityTransitionResult.extractResult(intent)
+                result?.let {
+                    activityManager.processTransitionResult(it)
                 }
             }
         }

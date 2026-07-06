@@ -12,7 +12,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -40,11 +39,20 @@ class LocationService @Inject constructor(
         LocationServices.getFusedLocationProviderClient(context)
 
     suspend fun getCurrentLocation(): Location? = suspendCancellableCoroutine { continuation ->
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.w("LocationService", "Location permission not granted")
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+
         try {
             fusedLocationClient.getCurrentLocation(
                 Priority.PRIORITY_BALANCED_POWER_ACCURACY,
                 null
             ).addOnSuccessListener { location ->
+                // Guard with isActive: resuming an already-resumed continuation crashes
+                if (!continuation.isActive) return@addOnSuccessListener
                 if (location != null) {
                     continuation.resume(
                         Location(
@@ -58,11 +66,11 @@ class LocationService @Inject constructor(
                 }
             }.addOnFailureListener { exception ->
                 Log.e("LocationService", "Error getting location", exception)
-                continuation.resume(null)
+                if (continuation.isActive) continuation.resume(null)
             }
         } catch (e: SecurityException) {
             Log.e("LocationService", "Security exception getting location", e)
-            continuation.resume(null)
+            if (continuation.isActive) continuation.resume(null)
         }
     }
 
@@ -94,17 +102,24 @@ class LocationService @Inject constructor(
                 .url(urlBuilder.build())
                 .build()
 
-            val response = withContext(Dispatchers.IO) {
-                client.newCall(request).execute()
+            // use {} ensures the response (and its connection) is always released
+            val responseBody = withContext(Dispatchers.IO) {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e("LocationService", "Error: ${response.code}")
+                        null
+                    } else {
+                        response.body?.string()
+                    }
+                }
             }
 
-            if (!response.isSuccessful) {
-                Log.e("LocationService", "Error: ${response.code}")
+            if (responseBody == null) {
                 emit(emptyList())
                 return@flow
             }
 
-            val jsonResponse = JSONObject(response.body?.string() ?: "")
+            val jsonResponse = JSONObject(responseBody)
             val features = jsonResponse.getJSONArray("features")
 
             val locations = (0 until features.length()).map { i ->
@@ -155,8 +170,7 @@ class LocationService @Inject constructor(
             Log.e("LocationService", "Error searching locations", e)
             emit(emptyList())
         }
-    }.debounce(300)
-        .flowOn(Dispatchers.IO)
+    }.flowOn(Dispatchers.IO)
 
     private fun buildLocationName(properties: JSONObject): String {
         return buildString {
@@ -228,6 +242,7 @@ class LocationService @Inject constructor(
                 Priority.PRIORITY_HIGH_ACCURACY,
                 null
             ).addOnSuccessListener { location ->
+                if (!continuation.isActive) return@addOnSuccessListener
                 if (location != null) {
                     Log.d("LocationService", "Got high accuracy location: ${location.latitude}, ${location.longitude}")
                     continuation.resume(
@@ -243,11 +258,11 @@ class LocationService @Inject constructor(
                 }
             }.addOnFailureListener { exception ->
                 Log.e("LocationService", "Error getting location", exception)
-                continuation.resume(null)
+                if (continuation.isActive) continuation.resume(null)
             }
         } catch (e: SecurityException) {
             Log.e("LocationService", "Security exception getting location", e)
-            continuation.resume(null)
+            if (continuation.isActive) continuation.resume(null)
         }
     }
 }

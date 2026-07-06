@@ -38,13 +38,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Receives activity recognition updates via explicit PendingIntent; no intent-filter needed -->
         <receiver
             android:name=".data.location.ActivityRecognitionReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.beakoninc.locusnotes.ACTIVITY_TRANSITION_ACTION" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
         <service
             android:name=".data.service.ProximityService"
             android:enabled="true"

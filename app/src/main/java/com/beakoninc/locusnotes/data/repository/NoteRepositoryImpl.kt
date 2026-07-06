@@ -15,6 +15,7 @@ class NoteRepositoryImpl @Inject constructor(private val noteDao: NoteDao) : Not
     override suspend fun updateNote(note: Note) = noteDao.updateNote(note)
     override suspend fun deleteNote(note: Note) = noteDao.deleteNote(note)
     override suspend fun searchNotes(query: String): List<Note> {
-        return noteDao.searchNotes("%$query%")
+        // The DAO query already wraps the parameter in LIKE wildcards
+        return noteDao.searchNotes(query)
     }
 }

@@ -15,3 +15,5 @@
 local.properties
 roadmap.txt
 App description.txt
+/.claude/
+.idea/misc.xml
