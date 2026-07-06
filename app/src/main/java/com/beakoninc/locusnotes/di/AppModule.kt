@@ -103,8 +103,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideNotificationTracker(): NotificationTracker {
-        return LocalNotificationTracker()
+    fun provideNotificationTracker(@ApplicationContext context: Context): NotificationTracker {
+        return LocalNotificationTracker(context)
     }
 
 }

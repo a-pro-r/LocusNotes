@@ -25,7 +25,7 @@ class ProximityService : Service() {
         startForeground(NOTIFICATION_ID, createServiceNotification())
         Log.d(TAG, "Proximity service created")
 
-        // ProximityManager now handles all monitoring
+        proximityManager.startMonitoring()
     }
 
     private fun createServiceNotification(): Notification {

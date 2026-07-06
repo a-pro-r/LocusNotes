@@ -38,13 +38,32 @@ class ProximityManager @Inject constructor(
     private var lastNotificationTime = 0L
     private val NOTIFICATION_COOLDOWN = 60000L // 1 minute between notifications
 
-    init {
-        // Start proximity checks with activity recognition
-        startHybridProximityChecks()
+    private var monitoringJob: Job? = null
+
+    /**
+     * Starts proximity monitoring. Safe to call multiple times (idempotent) and
+     * after stopMonitoring() — the singleton's scope is never cancelled, only the
+     * monitoring job, so a restarted ProximityService can resume monitoring.
+     */
+    @Synchronized
+    fun startMonitoring() {
+        if (monitoringJob?.isActive == true) {
+            Log.d(TAG, "Proximity monitoring already running")
+            return
+        }
+        Log.d(TAG, "Starting proximity monitoring")
+        monitoringJob = startHybridProximityChecks()
     }
 
-    private fun startHybridProximityChecks() {
-        serviceScope.launch {
+    @Synchronized
+    fun stopMonitoring() {
+        Log.d(TAG, "Stopping proximity monitoring")
+        monitoringJob?.cancel()
+        monitoringJob = null
+    }
+
+    private fun startHybridProximityChecks(): Job {
+        return serviceScope.launch {
             // Check daily reset
             launch {
                 while (isActive) {
@@ -226,7 +245,10 @@ class ProximityManager @Inject constructor(
     }
 
     fun onDestroy() {
-        serviceScope.cancel()
+        // Only cancel the monitoring job — this is a process-wide singleton, so
+        // cancelling serviceScope would permanently kill checkNearbyNotes() even
+        // after the START_STICKY service restarts.
+        stopMonitoring()
     }
 
     companion object {

@@ -1,16 +1,11 @@
 package com.beakoninc.locusnotes
 
 import android.app.Application
-import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import dagger.hilt.android.HiltAndroidApp
 import org.osmdroid.config.Configuration
-import javax.inject.Inject
-import com.beakoninc.locusnotes.data.service.ProximityService
 
 @HiltAndroidApp
 class LocusNotesApplication : Application() {
-    @Inject
-    lateinit var activityRecognitionManager: ActivityRecognitionManager
 
     override fun onCreate() {
         super.onCreate()
@@ -18,10 +13,9 @@ class LocusNotesApplication : Application() {
         // Initialize OSMDroid
         Configuration.getInstance().load(this, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this))
 
-        // Start activity recognition
-        activityRecognitionManager.startTracking()
-
-        // Start proximity service
-        ProximityService.startService(this)
+        // Note: activity recognition tracking and the proximity foreground service
+        // are started from MainActivity once runtime permissions are granted.
+        // Starting a location-type foreground service here (before the user grants
+        // location permission) crashes with SecurityException on Android 14+.
     }
 }

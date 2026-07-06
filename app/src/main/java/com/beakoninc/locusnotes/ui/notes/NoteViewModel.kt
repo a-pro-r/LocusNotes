@@ -48,7 +48,6 @@ class NoteViewModel @Inject constructor(
     }
 
 
-    private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = proximityManager.nearbyNotes
 
     companion object {
