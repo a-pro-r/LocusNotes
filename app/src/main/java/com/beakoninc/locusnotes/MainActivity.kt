@@ -80,6 +80,15 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(EXTRA_NOTE_ID)?.let { noteIdToOpen = it }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Picks up permission grants made in Settings (e.g. via the in-app banner);
+        // refreshGeofences() no-ops internally when permissions are still missing
+        if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            geofenceManager.refreshNow()
+        }
+    }
+
     private fun requestRequiredPermissions() {
         val needed = mutableListOf<String>()
 

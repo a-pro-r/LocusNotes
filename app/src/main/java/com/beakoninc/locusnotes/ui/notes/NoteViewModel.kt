@@ -49,6 +49,7 @@ class NoteViewModel @Inject constructor(
 
 
     val nearbyNotes: StateFlow<List<Note>> = proximityManager.nearbyNotes
+    val nearbyDistances: StateFlow<Map<String, Double>> = proximityManager.nearbyDistances
 
     companion object {
         private const val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
@@ -108,6 +109,13 @@ class NoteViewModel @Inject constructor(
             if (_selectedNote.value?.id == note.id) {
                 clearSelectedNote()
             }
+        }
+    }
+
+    /** Re-inserts a just-deleted note with its original id (swipe-to-delete Undo). */
+    fun restoreNote(note: Note) {
+        viewModelScope.launch {
+            noteRepository.insertNote(note)
         }
     }
 

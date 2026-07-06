@@ -38,6 +38,10 @@ class ProximityManager @Inject constructor(
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
 
+    // Distance in meters per nearby note id, so the UI can show "0.4 mi away"
+    private val _nearbyDistances = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val nearbyDistances: StateFlow<Map<String, Double>> = _nearbyDistances.asStateFlow()
+
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val TAG = "ProximityManager"
     private val NEARBY_THRESHOLD_METERS = 3218.69 // 2 miles
@@ -86,6 +90,7 @@ class ProximityManager @Inject constructor(
 
             val allNotes = noteRepository.getAllNotesFlow().first()
 
+            val distances = mutableMapOf<String, Double>()
             val nearbyNotesList = allNotes.filter { note ->
                 val lat = note.latitude
                 val lon = note.longitude
@@ -97,6 +102,7 @@ class ProximityManager @Inject constructor(
                 )
                 val nearby = results[0] <= NEARBY_THRESHOLD_METERS
                 if (nearby) {
+                    distances[note.id] = results[0].toDouble()
                     Log.d(TAG, "Note '${note.title}' is nearby! (${results[0] / 1609.34} miles)")
                 }
                 nearby
@@ -104,6 +110,7 @@ class ProximityManager @Inject constructor(
 
             // Update state for the Nearby section and debug screen
             _nearbyNotes.value = nearbyNotesList
+            _nearbyDistances.value = distances
 
             // Filter notes that have reached notification limit
             val notesUnderLimit = nearbyNotesList.filter { note ->
