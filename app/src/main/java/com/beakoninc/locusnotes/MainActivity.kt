@@ -1,6 +1,7 @@
 package com.beakoninc.locusnotes
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.service.ProximityService
@@ -33,6 +35,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var activityRecognitionManager: ActivityRecognitionManager
 
+    // Note requested by a tapped proximity notification; cleared once shown
+    private var noteIdToOpen by mutableStateOf<String?>(null)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -43,11 +48,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestRequiredPermissions()
+        noteIdToOpen = intent?.getStringExtra(EXTRA_NOTE_ID)
         setContent {
             LocusNotesTheme {
-                MainScreen()
+                MainScreen(
+                    noteIdToOpen = noteIdToOpen,
+                    onNoteOpened = { noteIdToOpen = null }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(EXTRA_NOTE_ID)?.let { noteIdToOpen = it }
     }
 
     private fun requestRequiredPermissions() {
@@ -90,12 +104,16 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        const val EXTRA_NOTE_ID = "extra_note_id"
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    noteIdToOpen: String? = null,
+    onNoteOpened: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -128,42 +146,53 @@ fun MainScreen() {
                 )
             }
         ) { innerPadding ->
-            AppNavigation(navController, Modifier.padding(innerPadding))
+            AppNavigation(
+                navController = navController,
+                modifier = Modifier.padding(innerPadding),
+                noteIdToOpen = noteIdToOpen,
+                onNoteOpened = onNoteOpened
+            )
         }
     }
 }
 
 @Composable
 fun NavigationDrawerContent(navController: NavController, onItemClick: () -> Unit) {
+    // Observe the back stack so the selected item updates on navigation
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    fun navigateTo(route: String) {
+        navController.navigate(route) { launchSingleTop = true }
+        onItemClick()
+    }
+
     Column(modifier = Modifier.padding(16.dp)) {
-        Text("LocusNotes", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "LocusNotes",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
         Spacer(Modifier.height(16.dp))
         NavigationDrawerItem(
             icon = { Icon(Icons.Default.List, contentDescription = "Notes") },
             label = { Text("Notes") },
-            selected = navController.currentDestination?.route == "notes",
-            onClick = {
-                navController.navigate("notes")
-                onItemClick()
-            }
+            selected = currentRoute == "notes",
+            onClick = { navigateTo("notes") }
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Filled.Place, contentDescription = "Map") },
             label = { Text("Map") },
-            selected = navController.currentDestination?.route == "map",
-            onClick = {
-                navController.navigate("map")
-                onItemClick()
-            }
+            selected = currentRoute == "map",
+            onClick = { navigateTo("map") }
         )
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Filled.Build, contentDescription = "Debug") },
-            label = { Text("Debug") },
-            selected = navController.currentDestination?.route == "debug",
-            onClick = {
-                navController.navigate("debug")
-                onItemClick()
-            }
-        )
+        if (BuildConfig.DEBUG) {
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Filled.Build, contentDescription = "Debug") },
+                label = { Text("Debug") },
+                selected = currentRoute == "debug",
+                onClick = { navigateTo("debug") }
+            )
+        }
     }
 }
