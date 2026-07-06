@@ -89,14 +89,12 @@ object AppModule {
         @ApplicationContext context: Context,
         locationService: LocationService,
         noteRepository: NoteRepository,
-        activityRecognitionManager: ActivityRecognitionManager,
-        notificationTracker: NotificationTracker  // Add this parameter
+        notificationTracker: NotificationTracker
     ): ProximityManager {
         return ProximityManager(
             context,
             locationService,
             noteRepository,
-            activityRecognitionManager,
             notificationTracker
         )
     }

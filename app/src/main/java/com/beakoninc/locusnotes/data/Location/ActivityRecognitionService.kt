@@ -28,7 +28,9 @@ class ActivityRecognitionManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "ActivityRecognition"
-        const val UPDATE_INTERVAL = 1000L  // 0 means as fast as possible
+        // Geofencing drives proximity now; activity updates only feed the debug
+        // screen, so a relaxed interval saves battery
+        const val UPDATE_INTERVAL = 60000L
         const val ACTION_PROCESS_ACTIVITY = "com.beakoninc.locusnotes.PROCESS_ACTIVITY"
     }
 

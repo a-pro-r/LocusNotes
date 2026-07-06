@@ -12,27 +12,35 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.beakoninc.locusnotes.MainActivity
 import com.beakoninc.locusnotes.R
-import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
 import com.beakoninc.locusnotes.data.location.LocationService
+import com.beakoninc.locusnotes.data.model.Location
 import com.beakoninc.locusnotes.data.model.Note
 import com.beakoninc.locusnotes.data.repository.NoteRepository
-import com.google.android.gms.location.DetectedActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Evaluates which notes are near a given location and posts the notification.
+ * Continuous polling is gone — proximity is now driven by [GeofenceManager]
+ * events in the background, plus a one-shot [checkNearbyNotes] when the app
+ * opens so the UI's "Nearby" section stays fresh.
+ */
 @Singleton
 class ProximityManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationService: LocationService,
     private val noteRepository: NoteRepository,
-    private val activityRecognitionManager: ActivityRecognitionManager,
-    private val notificationTracker: NotificationTracker  // Add this parameter
+    private val notificationTracker: NotificationTracker
 ) {
     private val _nearbyNotes = MutableStateFlow<List<Note>>(emptyList())
     val nearbyNotes: StateFlow<List<Note>> = _nearbyNotes.asStateFlow()
+
+    // Distance in meters per nearby note id, so the UI can show "0.4 mi away"
+    private val _nearbyDistances = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val nearbyDistances: StateFlow<Map<String, Double>> = _nearbyDistances.asStateFlow()
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val TAG = "ProximityManager"
@@ -41,159 +49,101 @@ class ProximityManager @Inject constructor(
     private var lastNotificationTime = 0L
     private val NOTIFICATION_COOLDOWN = 60000L // 1 minute between notifications
 
-    private var monitoringJob: Job? = null
-
-    /**
-     * Starts proximity monitoring. Safe to call multiple times (idempotent) and
-     * after stopMonitoring() — the singleton's scope is never cancelled, only the
-     * monitoring job, so a restarted ProximityService can resume monitoring.
-     */
-    @Synchronized
-    fun startMonitoring() {
-        if (monitoringJob?.isActive == true) {
-            Log.d(TAG, "Proximity monitoring already running")
-            return
-        }
-        Log.d(TAG, "Starting proximity monitoring")
-        monitoringJob = startHybridProximityChecks()
-    }
-
-    @Synchronized
-    fun stopMonitoring() {
-        Log.d(TAG, "Stopping proximity monitoring")
-        monitoringJob?.cancel()
-        monitoringJob = null
-    }
-
-    private fun startHybridProximityChecks(): Job {
-        return serviceScope.launch {
-            // Check daily reset
-            launch {
-                while (isActive) {
-                    notificationTracker.checkAndResetCountsIfNeeded()
-                    delay(3600000) // Check once per hour
-                }
-            }
-
-            // Activity-based immediate checks
-            launch {
-                activityRecognitionManager.currentActivity.collect { activity ->
-                    when (activity) {
-                        DetectedActivity.WALKING,
-                        DetectedActivity.RUNNING,
-                        DetectedActivity.ON_FOOT,
-                        DetectedActivity.ON_BICYCLE,
-                        DetectedActivity.IN_VEHICLE -> {
-                            Log.d(TAG, "Movement detected (${getActivityString(activity)}), checking for nearby notes")
-                            checkNearbyNotes()
-                        }
-                    }
-                }
-            }
-
-            // Adaptive periodic checks based on activity
-            launch {
-                while (isActive) {
-                    val currentActivity = activityRecognitionManager.currentActivity.value
-                    val isMoving = when (currentActivity) {
-                        DetectedActivity.WALKING,
-                        DetectedActivity.RUNNING,
-                        DetectedActivity.ON_FOOT,
-                        DetectedActivity.ON_BICYCLE,
-                        DetectedActivity.IN_VEHICLE -> true
-                        else -> false
-                    }
-
-                    val checkInterval = if (isMoving) {
-                        Log.d(TAG, "User is moving, checking every 1 minute")
-                        60000L // 1 minute when moving
-                    } else {
-                        Log.d(TAG, "User is stationary, checking every 20 minutes")
-                        1200000L // 20 minutes when stationary
-                    }
-
-                    checkNearbyNotes()
-                    delay(checkInterval)
-                }
-            }
-        }
-    }
-
+    /** One-shot check from the device's current location (app open, debug button). */
     fun checkNearbyNotes() {
         serviceScope.launch {
-            try {
-                // Check if counts need to be reset
-                notificationTracker.checkAndResetCountsIfNeeded()
-
-                val userLocation = locationService.getCurrentLocation()
-                if (userLocation == null) {
-                    Log.e(TAG, "Cannot check proximity: Current location is null")
-                    return@launch
-                }
-
-                Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
-
-                val allNotes = noteRepository.getAllNotesFlow().first()
-
-                // Find all nearby notes
-                val nearbyNotesList = mutableListOf<Note>()
-
-                allNotes.forEach { note ->
-                    if (note.latitude != null && note.longitude != null) {
-                        val results = FloatArray(1)
-                        android.location.Location.distanceBetween(
-                            userLocation.latitude, userLocation.longitude,
-                            note.latitude!!, note.longitude!!,
-                            results
-                        )
-                        val distance = results[0].toDouble()
-
-                        if (distance <= NEARBY_THRESHOLD_METERS) {
-                            Log.d(TAG, "Note '${note.title}' is nearby! (${distance/1609.34} miles)")
-                            nearbyNotesList.add(note)
-                        }
-                    }
-                }
-
-                // Update state for debug screen and other UI
-                _nearbyNotes.value = nearbyNotesList
-
-                // Filter notes that have reached notification limit
-                val notesUnderLimit = nearbyNotesList.filter { note ->
-                    val notificationCount = notificationTracker.getCount(note.id)
-                    val maxCount = notificationTracker.getMaxNotificationsPerNote()
-                    val underLimit = notificationCount < maxCount
-
-                    if (!underLimit) {
-                        Log.d(TAG, "Note '${note.title}' has reached notification limit (${notificationCount}/${maxCount})")
-                    }
-
-                    underLimit
-                }
-
-                // Show notification if we have eligible notes
-                if (notesUnderLimit.isNotEmpty()) {
-                    // Only notify if enough time has passed since last notification
-                    if (System.currentTimeMillis() - lastNotificationTime > NOTIFICATION_COOLDOWN) {
-                        notifyNearbyNotes(notesUnderLimit)
-
-                        // Increment counts for notified notes
-                        notesUnderLimit.forEach { note ->
-                            notificationTracker.incrementCount(note.id)
-                        }
-
-                        lastNotificationTime = System.currentTimeMillis()
-                    } else {
-                        Log.d(TAG, "Skipping notification due to cooldown period")
-                    }
-                } else if (nearbyNotesList.isNotEmpty()) {
-                    Log.d(TAG, "Notes found but all have reached daily notification limit")
-                } else {
-                    Log.d(TAG, "No nearby notes found")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error checking note proximity", e)
+            val userLocation = locationService.getCurrentLocation()
+            if (userLocation == null) {
+                Log.e(TAG, "Cannot check proximity: Current location is null")
+                return@launch
             }
+            evaluateNearbyNotes(userLocation)
+        }
+    }
+
+    /**
+     * Called by [GeofenceBroadcastReceiver] on fence entry. Uses the location that
+     * triggered the fence (free — no new GPS fix); a full nearby scan from there
+     * produces one digest notification instead of one per fence.
+     */
+    suspend fun onGeofencesEntered(
+        noteIds: List<String>,
+        triggeringLocation: android.location.Location?
+    ) {
+        Log.d(TAG, "Geofence entry for ${noteIds.size} note(s)")
+        val userLocation = triggeringLocation?.let {
+            Location(name = "Current Location", latitude = it.latitude, longitude = it.longitude)
+        } ?: locationService.getCurrentLocation()
+
+        if (userLocation == null) {
+            Log.e(TAG, "Geofence fired but no location available")
+            return
+        }
+        evaluateNearbyNotes(userLocation)
+    }
+
+    private suspend fun evaluateNearbyNotes(userLocation: Location) {
+        try {
+            notificationTracker.checkAndResetCountsIfNeeded()
+
+            Log.d(TAG, "Checking note proximity at: (${userLocation.latitude}, ${userLocation.longitude})")
+
+            val allNotes = noteRepository.getAllNotesFlow().first()
+
+            val distances = mutableMapOf<String, Double>()
+            val nearbyNotesList = allNotes.filter { note ->
+                val lat = note.latitude
+                val lon = note.longitude
+                if (lat == null || lon == null) return@filter false
+
+                val results = FloatArray(1)
+                android.location.Location.distanceBetween(
+                    userLocation.latitude, userLocation.longitude, lat, lon, results
+                )
+                val nearby = results[0] <= NEARBY_THRESHOLD_METERS
+                if (nearby) {
+                    distances[note.id] = results[0].toDouble()
+                    Log.d(TAG, "Note '${note.title}' is nearby! (${results[0] / 1609.34} miles)")
+                }
+                nearby
+            }
+
+            // Update state for the Nearby section and debug screen
+            _nearbyNotes.value = nearbyNotesList
+            _nearbyDistances.value = distances
+
+            // Filter notes that have reached notification limit
+            val notesUnderLimit = nearbyNotesList.filter { note ->
+                val notificationCount = notificationTracker.getCount(note.id)
+                val maxCount = notificationTracker.getMaxNotificationsPerNote()
+                val underLimit = notificationCount < maxCount
+
+                if (!underLimit) {
+                    Log.d(TAG, "Note '${note.title}' has reached notification limit ($notificationCount/$maxCount)")
+                }
+
+                underLimit
+            }
+
+            if (notesUnderLimit.isNotEmpty()) {
+                if (System.currentTimeMillis() - lastNotificationTime > NOTIFICATION_COOLDOWN) {
+                    notifyNearbyNotes(notesUnderLimit)
+
+                    notesUnderLimit.forEach { note ->
+                        notificationTracker.incrementCount(note.id)
+                    }
+
+                    lastNotificationTime = System.currentTimeMillis()
+                } else {
+                    Log.d(TAG, "Skipping notification due to cooldown period")
+                }
+            } else if (nearbyNotesList.isNotEmpty()) {
+                Log.d(TAG, "Notes found but all have reached daily notification limit")
+            } else {
+                Log.d(TAG, "No nearby notes found")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking note proximity", e)
         }
     }
 
@@ -219,7 +169,7 @@ class ProximityManager @Inject constructor(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val notification = NotificationCompat.Builder(context, ProximityService.CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -252,26 +202,8 @@ class ProximityManager @Inject constructor(
         }
     }
 
-    private fun getActivityString(type: Int): String = when (type) {
-        DetectedActivity.STILL -> "Still"
-        DetectedActivity.WALKING -> "Walking"
-        DetectedActivity.RUNNING -> "Running"
-        DetectedActivity.IN_VEHICLE -> "In Vehicle"
-        DetectedActivity.ON_BICYCLE -> "On Bicycle"
-        DetectedActivity.ON_FOOT -> "On Foot"
-        DetectedActivity.TILTING -> "Tilting"
-        DetectedActivity.UNKNOWN -> "Unknown"
-        else -> "Unknown"
-    }
-
-    fun onDestroy() {
-        // Only cancel the monitoring job — this is a process-wide singleton, so
-        // cancelling serviceScope would permanently kill checkNearbyNotes() even
-        // after the START_STICKY service restarts.
-        stopMonitoring()
-    }
-
     companion object {
+        const val CHANNEL_ID = "proximity_channel"
         private const val NOTIFICATION_ID = 1002
     }
 }
