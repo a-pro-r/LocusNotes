@@ -23,7 +23,8 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.beakoninc.locusnotes.data.location.ActivityRecognitionManager
-import com.beakoninc.locusnotes.data.service.ProximityService
+import com.beakoninc.locusnotes.data.service.GeofenceManager
+import com.beakoninc.locusnotes.data.service.ProximityManager
 import com.beakoninc.locusnotes.ui.theme.LocusNotesTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -35,6 +36,12 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var activityRecognitionManager: ActivityRecognitionManager
 
+    @Inject
+    lateinit var geofenceManager: GeofenceManager
+
+    @Inject
+    lateinit var proximityManager: ProximityManager
+
     // Note requested by a tapped proximity notification; cleared once shown
     private var noteIdToOpen by mutableStateOf<String?>(null)
 
@@ -43,6 +50,15 @@ class MainActivity : ComponentActivity() {
     ) { results ->
         Log.d(TAG, "Permission results: $results")
         startLocationFeaturesIfPermitted()
+        maybeRequestBackgroundLocation()
+    }
+
+    // Android requires background location to be requested in a separate, second step
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Log.d(TAG, "Background location granted: $granted")
+        if (granted) geofenceManager.refreshNow()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,8 +100,18 @@ class MainActivity : ComponentActivity() {
 
         if (needed.isEmpty()) {
             startLocationFeaturesIfPermitted()
+            maybeRequestBackgroundLocation()
         } else {
             permissionLauncher.launch(needed.toTypedArray())
+        }
+    }
+
+    private fun maybeRequestBackgroundLocation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
+            !hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        ) {
+            backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
     }
 
@@ -96,7 +122,10 @@ class MainActivity : ComponentActivity() {
         }
         // Activity recognition tracking checks its own permission internally
         activityRecognitionManager.startTracking()
-        ProximityService.startService(this)
+        // Geofences handle background proximity; one manual check keeps the
+        // "Nearby" section fresh for this session
+        geofenceManager.startMonitoring()
+        proximityManager.checkNearbyNotes()
     }
 
     private fun hasPermission(permission: String): Boolean =
