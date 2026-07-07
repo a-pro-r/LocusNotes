@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import android.text.format.DateUtils
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -81,6 +83,25 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // Home shows one tile per tag; a note with two tags appears in both
+    val tagEntries = remember(notes) {
+        notes.flatMap { note -> note.tags.map { tag -> tag to note } }
+            .groupBy({ it.first }, { it.second })
+            .entries.sortedBy { it.key.lowercase() }
+            .map { it.key to it.value }
+    }
+    val untaggedNotes = remember(notes) { notes.filter { it.tags.isEmpty() } }
+    var selectedTag by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = selectedTag != null) { selectedTag = null }
+    // Leave the tag view when its last note is deleted or the tag disappears
+    LaunchedEffect(selectedTag, notes) {
+        val tag = selectedTag ?: return@LaunchedEffect
+        val stillExists =
+            if (tag == UNTAGGED_KEY) untaggedNotes.isNotEmpty()
+            else notes.any { tag in it.tags }
+        if (!stillExists) selectedTag = null
+    }
+
     // Nearby reminders silently never fire without "Allow all the time" location;
     // re-check on resume so the banner disappears after the user fixes it in Settings
     val context = LocalContext.current
@@ -131,19 +152,69 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
                 NearbyAlertsBanner(onDismiss = { bannerDismissed = true })
             }
 
+            val currentTag = selectedTag
             if (searchQuery.isNotEmpty()) {
                 NoteSearchResults(searchResults, searchQuery, onNoteClick = { selectedNoteId = it.id })
             } else if (notes.isEmpty()) {
                 EmptyNotesMessage()
-            } else {
+            } else if (currentTag != null) {
+                // Notes inside one collection
+                val tagNotes =
+                    if (currentTag == UNTAGGED_KEY) untaggedNotes
+                    else notes.filter { note -> currentTag in note.tags }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
+                ) {
+                    IconButton(onClick = { selectedTag = null }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back to collections")
+                    }
+                    Text(
+                        if (currentTag == UNTAGGED_KEY) "Untagged" else currentTag,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "${tagNotes.size}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
+                }
                 LazyColumn(
                     contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp) // keep last card clear of the FAB
                 ) {
+                    items(tagNotes, key = { it.id }) { note ->
+                        SwipeActionsContainer(
+                            modifier = Modifier.animateItemPlacement(),
+                            onDelete = { deleteWithUndo(note) },
+                            onEdit = { editNoteId = note.id }
+                        ) {
+                            NoteListItem(
+                                note = note,
+                                distanceMeters = nearbyDistances[note.id],
+                                onShowDetails = { selectedNoteId = it.id },
+                                onEdit = { editNoteId = note.id },
+                                onDelete = { deleteWithUndo(note) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Home: nearby notes, then one tile per collection
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
                     if (nearbyNotes.isNotEmpty()) {
-                        item { SectionHeader("Nearby") }
-                        items(nearbyNotes, key = { "nearby-${it.id}" }) { note ->
+                        SectionHeader("Nearby")
+                        nearbyNotes.forEach { note ->
                             SwipeActionsContainer(
-                                modifier = Modifier.animateItemPlacement(),
                                 onDelete = { deleteWithUndo(note) },
                                 onEdit = { editNoteId = note.id }
                             ) {
@@ -157,22 +228,34 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
                                 )
                             }
                         }
-                        item { SectionHeader("All notes") }
                     }
-                    items(notes, key = { it.id }) { note ->
-                        SwipeActionsContainer(
-                            modifier = Modifier.animateItemPlacement(),
-                            onDelete = { deleteWithUndo(note) },
-                            onEdit = { editNoteId = note.id }
-                        ) {
-                            NoteListItem(
-                                note = note,
-                                onShowDetails = { selectedNoteId = it.id },
-                                onEdit = { editNoteId = note.id },
-                                onDelete = { deleteWithUndo(note) }
-                            )
+                    SectionHeader("Collections")
+                    val tiles = buildList {
+                        tagEntries.forEach { (tag, tagged) -> add(Triple(tag, tag, tagged.size)) }
+                        if (untaggedNotes.isNotEmpty()) {
+                            add(Triple(UNTAGGED_KEY, "Untagged", untaggedNotes.size))
                         }
                     }
+                    tiles.chunked(2).forEach { rowTiles ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowTiles.forEach { (key, label, count) ->
+                                TagTile(
+                                    label = label,
+                                    count = count,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { selectedTag = key }
+                                )
+                            }
+                            if (rowTiles.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    Spacer(Modifier.height(76.dp)) // keep the last row clear of the FAB
                 }
             }
         }
@@ -243,6 +326,39 @@ fun NoteList(viewModel: NoteViewModel = hiltViewModel(),
         }
     }
 }
+// Sentinel for notes with no tags; distinct from any real tag a user could type
+private const val UNTAGGED_KEY = " untagged"
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TagTile(
+    label: String,
+    count: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(onClick = onClick, modifier = modifier.height(96.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                if (count == 1) "1 note" else "$count notes",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 private fun isBackgroundLocationMissing(context: Context): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(
